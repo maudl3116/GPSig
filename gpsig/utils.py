@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.ERROR)
 import gpflow as gp
+import pandas as pd 
 
 def _sample_inducing_tensors(sequences, num_inducing, num_levels, increments):
     Z = []
@@ -96,3 +97,37 @@ def suggest_initial_lengthscales(X, num_samples=None):
     with tf.Session() as sess:
         l_init = sess.run(l_init)
     return np.maximum(l_init, 1.)
+
+def compute_trunc(M,d):
+    features_count = d+1
+    sig_level = 1
+    while features_count < M:
+        sig_level = sig_level + 1 
+        features_count = features_count + d**(sig_level)
+    return sig_level
+
+def get_powers(d,sig_level):
+    '''
+    This function uses the the pandas package, to get the order of the first (d^{sig_level+1}-1)/(d-1) signature features
+    Returns the tensor of multi-indices corresponding to the first (d^{sig_level+1}-1)/(d-1) signature features 
+
+    Input:
+        -(int) d: the state-space dimension of the data
+        -(int) sig_level: determines the number of inducing features in VOS which is precisely M=(d^{sig_level+1}-1)/(d-1) 
+    Output:
+        - (tensorflow tensor) multi-indices corresponding to the first M=(d^{sig_level+1}-1)/(d-1) signature features 
+        a tensor of shape (M,d)
+    '''
+    sig_keys = []
+    sig_keys+=[[i] for i in np.arange(1,d+1)]
+
+    for level in range(2,sig_level+1):
+        multi_indices = pd.MultiIndex.from_product([np.arange(1,d+1) for i in range(level)]).values
+        sig_keys+=[np.array(indices) for indices in multi_indices]
+
+    powers = np.zeros((len(sig_keys),d))
+    for i in range(len(sig_keys)):
+        val, count = np.unique(sig_keys[i],return_counts=True)
+        powers[i][val-1]=count
+
+    return tf.convert_to_tensor(powers,dtype=settings.float_type)
