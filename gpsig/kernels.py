@@ -185,6 +185,11 @@ class SignatureKernel(Kernel):
     def compute_K_incr_tens_vs_seq(self, Z, X): 
         return self.K_tens_vs_seq(Z, X, increments=True, return_levels=False)
 
+    # added this
+    @autoflow((settings.float_type,), (settings.float_type, [None, None]))
+    def compute_K_diag_rescaled(self, Z, X): 
+        return self.Kdiag_rescaled(Z, X, return_levels=False)
+
     def _K_seq_diag(self, X):
         """
         # Input
@@ -204,7 +209,30 @@ class SignatureKernel(Kernel):
         
         return K_lvls_diag
 
-    
+    # added this (in development, M may exceed GPU memory capacities?)
+    def _K_seq_diag_rescaled(self, Z, X):
+        """
+        # Input
+        :X:             (num_examples, len_examples, num_features) tensor of sequences
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
+        """
+        
+        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
+        num_examples, len_examples = tf.shape(X)[-3], tf.shape(X)[-2]
+        
+        Z = tf.concat([Z, tf.ones_like(Z)],axis=1)  
+        ZX = Z[:,:,None,None,:]*X[None,None,:,:,:]
+
+        ZX = tf.transpose(ZX,perm=[2,0,1,3,4]) #(num_examples, len_tensors, 2*num_tensors, len_examples,num_features)
+        ZX = tf.reshape(ZX,[num_examples, len_tensors*2*num_tensors*len_examples, num_features])
+        M = tf.reshape(self._base_kern(X,ZX), (num_examples, len_examples, len_tensors, 2*num_tensors,len_examples))
+
+        K_lvls_diag = signature_algs.signature_kern_rescaled_higher_order(M, self.num_levels, order=self.order, difference=self.difference)
+        
+        return K_lvls_diag
+
     def _K_seq(self, X, X2 = None):
         """
         # Input
@@ -508,7 +536,43 @@ class SignatureKernel(Kernel):
             return K_lvls_diag
         else:
             return tf.reduce_sum(K_lvls_diag, axis=0)
+
+    # added this
+    @params_as_tensors
+    def Kdiag_rescaled(self, Z, X, presliced=False, return_levels=False):
+        """
+        Computes the diagonal of a square signature kernel matrix.
+        """
+
+        num_examples = tf.shape(X)[0]
         
+        if self.normalization:
+            if return_levels:
+                return tf.tile(self.sigma * self.variances[:, None], [1, num_examples])
+            else:
+                return tf.fill((num_examples,), self.sigma * tf.reduce_sum(self.variances))
+                
+        if not presliced:
+            X, _ = self._slice(X, None)
+
+        X = tf.reshape(X, (num_examples, -1, self.num_features))
+
+        X = self._apply_scaling_and_lags_to_sequences(X)
+
+        if self.low_rank:
+            Phi_lvls = self._K_seq_lr_feat(X)
+            K_lvls_diag = tf.stack([tf.reduce_sum(tf.square(P), axis=-1) for P in Phi_lvls], axis=0)
+        else:
+            K_lvls_diag = self._K_seq_diag_rescaled(Z,X)
+
+        K_lvls_diag *= self.sigma          
+
+        if return_levels:
+            return K_lvls_diag
+        else:
+            return tf.reduce_sum(K_lvls_diag, axis=0)
+
+
     @params_as_tensors
     def K_tens(self, Z, return_levels=False, increments=False):
         """
@@ -535,8 +599,9 @@ class SignatureKernel(Kernel):
         else:
             return tf.reduce_sum(K_lvls, axis=0)
 
+    # changed this by adding apply_scalings
     @params_as_tensors
-    def K_tens_vs_seq(self, Z, X, return_levels=False, increments=False, presliced=False):
+    def K_tens_vs_seq(self, Z, X, return_levels=False, increments=False, presliced=False, apply_scalings=True):
         """
         Computes a cross-covariance matrix between inducing tensors and sequences.
         """
@@ -550,9 +615,9 @@ class SignatureKernel(Kernel):
         
         num_tensors, len_tensors = tf.shape(Z)[1], tf.shape(Z)[0]
 
-        if increments:
+        if increments and apply_scalings:
             Z = self._apply_scaling_to_incremental_tensors(Z)
-        else:
+        elif not increments and apply_scalings:
             Z = self._apply_scaling_to_tensors(Z)
 
         X = self._apply_scaling_and_lags_to_sequences(X)

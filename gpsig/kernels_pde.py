@@ -38,12 +38,12 @@ class UntruncSignatureKernel(Kernel):
         
         """
         
-        super().__init__(input_dim, active_dims, name=name)
+        super().__init__(input_dim, name=name)
         self.num_features = num_features
         self.len_examples = self._validate_number_of_features(input_dim, num_features)
 
         assert num_lags is None, "VOSF does not handle lags yet"
-        assert implementation in ['cython','cpu_op', 'gpu_op','tf'], "implementation should be 'cython', 'cpu_op', 'gpu_op' or 'tf'.
+        assert implementation in ['cython','cpu_op', 'gpu_op','tf'], "implementation should be 'cython', 'cpu_op', 'gpu_op' or 'tf'."
         self.implementation = implementation
         self.order = order
         self.sigma = Parameter(1., transform=transforms.positive, dtype=settings.float_type)

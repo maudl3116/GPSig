@@ -3,6 +3,7 @@ import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.ERROR)
 import gpflow as gp
 import pandas as pd 
+from gpflow import settings
 
 def _sample_inducing_tensors(sequences, num_inducing, num_levels, increments):
     Z = []

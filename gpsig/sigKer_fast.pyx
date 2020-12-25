@@ -49,6 +49,7 @@ def sig_kern_diag(double[:,:,:] x, int n=0, bint implicit=False):
 					K_rev[l,i+1,j+1] = K_rev[l,i,j+1]+K_rev[l,i+1,j]-K_rev[l,i,j] + ((0.5*increment_rev)/(1.-0.25*increment_rev))*(K_rev[l,i,j+1]+K_rev[l,i+1,j])
 				else:
 					K[l,i+1,j+1] = (K[l,i,j+1] + K[l,i+1,j])*(1.+0.5*increment+(1./12)*increment**2) - K[l,i,j]*(1.-(1./12)*increment**2)
-					K_rev[l,i+1,j+1] = (K_rev[l,i,j+1] + K_rev[l,i+1,j]) + K_rev[l,i,j]*(increment_rev-1.)
+					K_rev[l,i+1,j+1] = (K_rev[l,i,j+1] + K_rev[l,i+1,j])*(1.+0.5*increment_rev+(1./12)*increment_rev**2) - K_rev[l,i,j]*(1.-(1./12)*increment_rev**2)
+					#K_rev[l,i+1,j+1] = (K_rev[l,i,j+1] + K_rev[l,i+1,j]) + K_rev[l,i,j]*(increment_rev-1.)
 
 	return np.array(K), np.array(K_rev)

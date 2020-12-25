@@ -70,7 +70,7 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
         # Computing Kxx (with the PDE-signature kernel here)
         Kxx = kern.Kdiag(X_new[:,:feat.input_dim]) 
         if full_f_cov:
-            Kxx += jitter * tf.eye(tf.shape(X)[0], dtype=settings.dtypes.float_type)
+            Kxx += jitter * tf.eye(tf.shape(X_new)[0], dtype=settings.dtypes.float_type)
         else:
             Kxx += jitter
 

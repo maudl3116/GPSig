@@ -121,7 +121,7 @@ class SVGP(models.SVGP):
         
         # compute variational expectations
         var_exp = self.likelihood.variational_expectations(f_mean, f_var, Y)
-
+        
         # scaling for batch size
         scale = tf.cast(self.num_data, settings.float_type) / tf.cast(num_samples, settings.float_type)
         return tf.reduce_sum(var_exp) * scale - KL
