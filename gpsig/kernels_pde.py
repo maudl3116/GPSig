@@ -11,18 +11,29 @@ from .sigKer_fast import sig_kern_diag as sig_kern_diag
 from . import lags
 
 from tensorflow.python.framework import ops
+# need to find a better way to load the module
+import os
+def find(name, path):
+    for root, dirs, files in os.walk(path):
+        if name in files:
+            return os.path.join(root, name)
+path = find("untrunc_cov_op_gpu.so",'.')
+cov_module_gpu = tf.load_op_library(path)
+from covariance_op import _untrunc_cov_grad
+
+from numba import cuda
 
 class UntruncSignatureKernel(Kernel):
     """
     """
     def __init__(self, input_dim, num_features, lengthscales=1,
-                 order=0, num_lags=None, implementation = 'cython',name=None):
+                 order=0, num_lags=None, implementation = 'gpu_op',name=None):
         """
         # Inputs:
         ## Args:
         :input_dim:         the total size of an input sample to the kernel
         :num_features:      the state-space dimension of the input sequebces,
-
+        
         ## Kwargs:
         ### Kernel options     
 		:lengthscales:      lengthscales for scaling the coordinates of the input sequences,
@@ -30,10 +41,9 @@ class UntruncSignatureKernel(Kernel):
                             if ARD is True, there is one lengthscale for each path dimension, i.e. lengthscales is of size (num_features)
         :order              corresponds to the level of discretization to solve the PDE to approximate the signature kernel
         :num_lags:          Nonnegative integer or None, the number of lags added to each sequence. Usually between 0-5.
-        :implementation:    should be 'cython'. In the development of VOSF, we may as well test dedicated tensorflow operators 'gpu_op' or 'cpu_op'. 
-                            We may as well compare to a direct tensorflow implementation (with automatic differentiation) 'tf'.
-                            The 'cython' option computes the kernel (cython code) and its gradients (tf code).
-        TO DO:
+        :implementation:    'cython' if we want to compute on the CPU. 'gpu_op' if we want to use a dedicated cuda tensorflow operator. 
+                            The 'cython' option computes the kernel (cython code) and another kernel to be able to compute the gradients.
+        ***** TO DO *****:
             allow num_lags to be different from None
         
         """
@@ -43,7 +53,7 @@ class UntruncSignatureKernel(Kernel):
         self.len_examples = self._validate_number_of_features(input_dim, num_features)
 
         assert num_lags is None, "VOSF does not handle lags yet"
-        assert implementation in ['cython','cpu_op', 'gpu_op','tf'], "implementation should be 'cython', 'cpu_op', 'gpu_op' or 'tf'."
+        assert implementation in ['cython', 'gpu_op'], "implementation should be 'cython' or 'gpu_op'"
         self.implementation = implementation
         self.order = order
         self.sigma = Parameter(1., transform=transforms.positive, dtype=settings.float_type)
@@ -147,12 +157,12 @@ class UntruncSignatureKernel(Kernel):
 
         if self.implementation == 'cython':
             K_diag = Kdiag_python(X,self.order)
-        # elif self.implementation == 'cpu_op':
-        #     K_diag, K_diag_rev = cov_module_cpu.untrunc_cov(X)
-        # elif self.implementation == 'gpu_op':
-        #     K_diag, K_diag_rev = cov_module_gpu.untrunc_cov(X)
-        # else:
-        #     K_diag = Kdiag_tf(X,n=5)
+        elif self.implementation == 'gpu_op':
+            incr = X[:,1:,:]-X[:,:-1,:]
+            E = tf.matmul(incr,incr,transpose_b=True)
+            sol = tf.ones([num_examples, tf.shape(X)[1]+1,tf.shape(X)[1]+1],dtype=settings.float_type)
+            K_diag_ = cov_module_gpu.untrunc_cov(X,E, sol)
+            K_diag = K_diag_[:,:-1,:-1]
         return self.sigma*K_diag[:,-1,-1]
 
 ''' Functions for the Cython covariance operator ''' 
@@ -161,7 +171,7 @@ def Kdiag_python(X,order=0,name=None):
     with ops.name_scope(name, "Kdiag_python", [X]) as name:
         K_diag, grad = py_func(sig_kern_diag,
                                  [X,order],
-                                 [tf.float64, tf.float64],
+                                 [settings.float_type, settings.float_type],
                                  name = name,
                                  grad = _KdiagGrad
         )
@@ -188,7 +198,7 @@ def _KdiagGrad(op, grad_next_op_Kdiag,grad_next_op_Kdiag_grad):
 
     n = op.inputs[1]
     c = tf.math.pow(2,n)
-    cfloat = tf.dtypes.cast(c,tf.float64)
+    cfloat = tf.dtypes.cast(c,settings.float_type)
 
     X = op.inputs[0]
     K_diag = op.outputs[0]
@@ -199,6 +209,13 @@ def _KdiagGrad(op, grad_next_op_Kdiag,grad_next_op_Kdiag_grad):
     M = tf.shape(X)[1]
     D = tf.shape(X)[2]
   
+    # we have only computed the lower triangular part of K_diag and K_diag_rev because they are symmetric as full_cov is false
+    MM = tf.shape(K_diag)[1]
+    diag_forward = tf.matrix_diag_part(K_diag)
+    K_diag += tf.transpose(K_diag,perm=[0,2,1]) - diag_forward[:,:,None]*tf.eye(MM,dtype=settings.float_type)[None,:,:]
+    diag_backward = tf.matrix_diag_part(K_diag_rev)
+    K_diag_rev += tf.transpose(K_diag_rev,perm=[0,2,1]) - diag_backward[:,:,None]*tf.eye(MM,dtype=settings.float_type)[None,:,:]
+
     # to compute the real gradient, as K_diag_rev is only one step of that computation
     inc_X = (X[:,1:,:]-X[:,:-1,:])/cfloat  #(A,M-1,D)  increments defined by the data                
     inc_X = tf.repeat(inc_X, repeats=2**n, axis=1) #(A,(2**n)*(M-1),D)  increments on the finer grid
@@ -211,7 +228,7 @@ def _KdiagGrad(op, grad_next_op_Kdiag,grad_next_op_Kdiag_grad):
 
     K_grad = KK[:,:,:,None]*inc_X[:,None,:,:]                       # (A,(2**n)*(M-1),(2**n)*(N-1),D)
     
-    n = tf.dtypes.cast(n, tf.float64)
+    n = tf.dtypes.cast(n, settings.float_type)
 
     K_grad = (1./cfloat)*tf.reduce_sum(K_grad,axis=2)               # (A,(2**n)*(M-1),D)
 
@@ -219,7 +236,7 @@ def _KdiagGrad(op, grad_next_op_Kdiag,grad_next_op_Kdiag_grad):
 
     # The gradient { grad_{X_i}[K(X_i,X_i)] : shape M,D } -> shape A,M,D 
     # we need to multiply by 2, because we have only computed the left gradient of the bilinear function
-    grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=tf.float64)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=tf.float64), K_grad], axis=1)
+    grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=settings.float_type)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=settings.float_type), K_grad], axis=1)
     
     return grad_next_op_Kdiag[:,-1,-1][:,None,None]*grad_points, None
 

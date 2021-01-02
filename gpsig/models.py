@@ -133,11 +133,16 @@ class SVGP(models.SVGP):
         Kzz, Kzx, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov)
         if isinstance(self.feature, InducingTensors) or isinstance(self.feature, InducingSequences):
             f_mean, f_var = base_conditional(Kzx, Kzz, Kxx, self.q_mu, full_cov=full_cov, q_sqrt=tf.matrix_band_part(self.q_sqrt, -1, 0), white=self.whiten)
+            f_mean += self.mean_function(X_new)
+            f_var = _expand_independent_outputs(f_var, full_cov, full_output_cov)
         else:
-            # added this. It is just to avoid cholesky decompositions we don't need with VOS
-            f_mean, f_var = base_conditional_ortho(Kzx, Kzz, Kxx, self.q_mu, full_cov=full_cov, q_sqrt=tf.matrix_band_part(self.q_sqrt, -1, 0), white=self.whiten)
-        f_mean += self.mean_function(X_new)
-        f_var = _expand_independent_outputs(f_var, full_cov, full_output_cov)
+            if self.fast_algo:
+                f_mean, f_var = self._build_predict_fast(X_new)
+            else:
+                # added this. It is just to avoid cholesky decompositions we don't need with VOS
+                f_mean, f_var = base_conditional_ortho(Kzx, Kzz, Kxx, self.q_mu, full_cov=full_cov, q_sqrt=tf.matrix_band_part(self.q_sqrt, -1, 0), white=self.whiten)
+                f_mean += self.mean_function(X_new)
+                f_var = _expand_independent_outputs(f_var, full_cov, full_output_cov)
         
         if return_Kzz:  
             return f_mean, f_var, Kzz
@@ -146,7 +151,7 @@ class SVGP(models.SVGP):
 
     # This is in development
     @params_as_tensors
-    def _build_predict_fast(self, X_new, full_cov=False, full_output_cov=False, return_Kzz=False, increments=True):
+    def _build_predict_fast(self, X_new, full_cov=False, full_output_cov=False, return_Kzz=False, increments=False):
         
         num_samples = tf.shape(X_new)[0]
         Kzz, _, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov, fast=True)

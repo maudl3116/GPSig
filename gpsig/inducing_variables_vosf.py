@@ -68,10 +68,12 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
             Kzx = Kuf(feat,kern,X_new[:,feat.input_dim:]) # S(\theta x) using iisignature compatible with tensorflow even if we do not use its autodiff
         
         # Computing Kxx (with the PDE-signature kernel here)
-        Kxx = kern.Kdiag(X_new[:,:feat.input_dim]) 
         if full_f_cov:
+            print('Not Implemented')
+            Kxx = kern.Kdiag(X_new[:,:feat.input_dim]) # to change with full covariance matrix
             Kxx += jitter * tf.eye(tf.shape(X_new)[0], dtype=settings.dtypes.float_type)
         else:
+            Kxx = kern.Kdiag(X_new[:,:feat.input_dim]) 
             Kxx += jitter
 
     return Kzz, Kzx, Kxx
@@ -159,10 +161,11 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
             Kzx = Kuf(feat,kern,X_new[:,feat.input_dim:]) 
 
         # Computing Kxx (with the truncated signature kernel here)
-        Kxx = kern.K(X_new[:,:feat.input_dim],return_levels = False)  
         if full_f_cov:
+            Kxx = kern.K(X_new[:,:feat.input_dim],return_levels = False)  
             Kxx += jitter * tf.eye(tf.shape(X)[0], dtype=settings.dtypes.float_type)
         else:
+            Kxx = kern.Kdiag(X_new[:,:feat.input_dim],return_levels = False) 
             Kxx += jitter
     return Kzz, Kzx, Kxx
 

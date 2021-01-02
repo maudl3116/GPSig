@@ -98,7 +98,7 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
         ## define kernel
         #k = gpsig.kernels.SignatureRBF(input_dim, num_levels=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, low_rank=low_rank)
         if inf:
-            k = gpsig.kernels_pde.UntruncSignatureKernel(input_dim, num_features, order=order, lengthscales=l_init, implementation='cython')
+            k = gpsig.kernels_pde.UntruncSignatureKernel(input_dim, num_features, order=order, lengthscales=l_init)
         else:
             k = gpsig.kernels.SignatureLinear(input_dim, num_features=num_features, num_levels=num_levels, order=num_levels, lengthscales=l_init,normalization=False, difference=True)
         
