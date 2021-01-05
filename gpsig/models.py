@@ -10,7 +10,7 @@ from gpflow.features import Kuu, Kuf
 
 from .inducing_variables import InducingTensors, InducingSequences, Kuu_Kuf_Kff, Kuu, Kuf
 
-# added these imports
+# these imports are for VOSF
 from .inducing_variables_vosf import TruncInducingOrthogonalTensors, UntruncInducingOrthogonalTensors, Kuu_Kuf_Kff, Kuu, Kuf
 from typing import Optional
 from .utils import get_powers
@@ -20,7 +20,7 @@ class SVGP(models.SVGP):
     """
     Re-implementation of SVGP from GPflow with a few minor tweaks. Slightly more efficient with SignatureKernels, and when using the low-rank option with signature kernels, this code must be used.
     """
-    def __init__(self, X, Y, kern, likelihood, feat, mean_function=None, num_latent=None, q_diag=False, whiten=True, minibatch_size=None, num_data=None, q_mu=None, q_sqrt=None, shuffle=True, fast_algo=False, **kwargs):
+    def __init__(self, X, Y, kern, likelihood, feat, mean_function=None, num_latent=None, q_diag=False, whiten=True, minibatch_size=None, num_data=None, q_mu=None, q_sqrt=None, bias=None, first_var=None, shuffle=True, fast_algo=False, **kwargs):
 
         if not isinstance(feat, InducingTensors) and not isinstance(feat, InducingSequences) and not isinstance(feat, InducingSequences) and not isinstance(feat, TruncInducingOrthogonalTensors) and not isinstance(feat, UntruncInducingOrthogonalTensors):
             raise ValueError('feat must be of type either InducingTensors, InducingSequences, TruncInducingOrthogonalTensors or UntruncInducingOrthogonalTensors')
@@ -38,35 +38,41 @@ class SVGP(models.SVGP):
         self.num_data = num_data or X.shape[0]
         self.q_diag, self.whiten = q_diag, whiten
         self.feature = feat
-        self._init_variational_parameters(num_inducing, q_mu, q_sqrt, q_diag)
-        self.fast_algo = fast_algo # added this
-
-        # The option "fast_algo" is under development
+        self.fast_algo = fast_algo 
         if self.fast_algo:
+            self._init_variational_parameters(num_inducing, None, None, q_diag)
+        else:
+            self._init_variational_parameters(num_inducing, q_mu, q_sqrt, q_diag)
+
+        if self.fast_algo:
+
             # restrictions
             assert self.q_diag, "fast algorithm only works with diagonal variational covariance"
             assert num_inducing==np.sum([ self.feature.d**k for k in range(self.feature.sig_level+1) ]), "cannot use the fast algorithm if we have a number of inducing features not corresponding to a truncation level"
             
-            # create auxiliary kernel to compute the approximate posterior mean and variance
+            # create auxiliary kernel to compute the approximate posterior mean and variance and inherit the parameters of the GP model kernel
             self.kern_auxiliary = SignatureLinear(X.shape[1], self.feature.d, num_levels=self.feature.sig_level, order=self.feature.sig_level, lengthscales=None,normalization=False, difference=True)
-            # inherit the parameters of the GP model kernel
             self.kern_auxiliary.lengthscales = self.kern.lengthscales
             self.kern_auxiliary.sigma = self.kern.sigma
 
-            # reparametrizing the variational means q_mu as sparse tensors
-            q_mu = np.zeros((int(self.feature.sig_level*(self.feature.sig_level+1)/2), num_latent, self.feature.d))
+            # reparametrizing the variational means q_mu as sparse tensors (need to separate the first component)
+            if q_mu is None:
+                q_mu = np.zeros((int(self.feature.sig_level*(self.feature.sig_level+1)/2), num_latent, self.feature.d))
             self.q_mu = Parameter(q_mu, dtype=settings.dtypes.float_type)  
-            # need to separate the first component
-            bias = np.zeros((1,num_latent))
+            
+            if bias is None:
+                bias = np.zeros((1,num_latent))
             self.bias = Parameter(bias, dtype=settings.dtypes.float_type)  
 
-            # reparametrizing the diagonal variational covariances q_sqrt as parse tensors
-            q_sqrt = np.zeros((int(self.feature.sig_level*(self.feature.sig_level+1)/2), num_latent, self.feature.d)) #  q_srt was of of shape (M,num_latents), is now (N_M(N_M+1)/2,(M-1)*num_latent,d)
+            # reparametrizing the diagonal variational covariances q_sqrt as parse tensors (need to separate the first component)
+            if q_sqrt is None:
+                q_sqrt = np.zeros((int(self.feature.sig_level*(self.feature.sig_level+1)/2), num_latent, self.feature.d)) #  q_srt was of of shape (M,num_latents), is now (N_M(N_M+1)/2,(M-1)*num_latent,d)
             self.q_sqrt = Parameter(q_sqrt, dtype=settings.dtypes.float_type,transform=transforms.positive) 
-            first_var = np.zeros((1,num_latent))
+
+            if first_var is None:
+                first_var = np.zeros((1,num_latent))
             self.first_var = Parameter(first_var, dtype=settings.dtypes.float_type,transform=transforms.positive)  
-            
-    
+
     @params_as_tensors
     def _build_likelihood(self):
 
@@ -76,38 +82,28 @@ class SVGP(models.SVGP):
         num_samples = tf.shape(X)[0]
 
         if isinstance(self.feature, UntruncInducingOrthogonalTensors) or isinstance(self.feature, TruncInducingOrthogonalTensors):
-            # we have 2 ways to compute f_mean and f_var:
-                # method 1: with explicit signatures ( computing K_uf=S_M(X) )
-                # method 2: using kernel tricks
+
             if self.fast_algo:
                 
                 f_mean, f_var = self._build_predict_fast(X, full_cov=False, full_output_cov=False, increments=False)
                 
-                # need to transform q_mu into a full (not sparse) tensor, and then flatten into a (num_inducing, num_latent) matrix  
-                q_mu_flat = [tf.transpose(self.bias)] #(num_latent,1)
-                k = 0
-                for m in range(1, self.feature.sig_level+1):
-                    Zm = self.q_mu[k]
-                    k += 1
-                    for i in range(1, m):
-                        Zm = tf.reshape(Zm[..., None] * self.q_mu[k, :, None, :],[self.bias.shape[1], -1])
-                        k += 1
-                    q_mu_flat.append(Zm)
-                q_mu_flat = tf.transpose(tf.concat(q_mu_flat, axis=1))
-                # need to transform q_sqrt into a full (not sparse) tensor, and then flatten into a (num_inducing,num_latent) matrix
+                ## KL computation
+
+                # Mahalanobis term: μqᵀμq  
+                mahalanobis = tf.reduce_sum( self.kern_auxiliary.norms_tens(self.q_mu) -1. + self.bias[0,:]**2 ) 
                 
-                q_sqrt_flat = [tf.transpose(self.first_var)] #(num_latent,1) 
-                k = 0
-                for m in range(1, self.feature.sig_level+1):
-                    Zm = self.q_sqrt[k]
-                    k += 1
-                    for i in range(1, m):
-                        Zm = tf.reshape(Zm[..., None] * self.q_sqrt[k, :, None, :],[self.q_sqrt.shape[1], -1])
-                        k += 1
-                    q_sqrt_flat.append(Zm)
-                q_sqrt_flat = tf.transpose(tf.concat(q_sqrt_flat, axis=1))
-                KL =  gauss_kl(q_mu_flat, q_sqrt_flat)  
-            # added this. there is no need to use the whitening case, 
+                # Constant term: - R * M
+                constant = - tf.cast(self.bias.shape[1]*self.feature.M, dtype=settings.float_type)
+                
+                # trace: tr(Sq) q_sqrt is directly the diagonal of Sq (not the square root)
+                trace = tf.reduce_sum( self.kern_auxiliary.sums_tens(self.q_sqrt) -1. + self.first_var[0,:] ) 
+
+                # log-determinant: log(det Sq)
+                logdet_qcov = tf.reduce_sum( self.kern_auxiliary.logs_tens(self.q_sqrt) + tf.log(self.first_var[0,:]) )
+
+                twoKL = mahalanobis + constant - logdet_qcov + trace
+                KL = 0.5*twoKL 
+       
             else:
                 f_mean, f_var = self._build_predict(X, full_cov=False, full_output_cov=False)
                 KL =  gauss_kl(self.q_mu, tf.matrix_band_part(self.q_sqrt, -1, 0))
@@ -124,14 +120,17 @@ class SVGP(models.SVGP):
         
         # scaling for batch size
         scale = tf.cast(self.num_data, settings.float_type) / tf.cast(num_samples, settings.float_type)
+
         return tf.reduce_sum(var_exp) * scale - KL
+
 
     @params_as_tensors
     def _build_predict(self, X_new, full_cov=False, full_output_cov=False, return_Kzz=False):
         
         num_samples = tf.shape(X_new)[0]
-        Kzz, Kzx, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov)
+        
         if isinstance(self.feature, InducingTensors) or isinstance(self.feature, InducingSequences):
+            Kzz, Kzx, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov)
             f_mean, f_var = base_conditional(Kzx, Kzz, Kxx, self.q_mu, full_cov=full_cov, q_sqrt=tf.matrix_band_part(self.q_sqrt, -1, 0), white=self.whiten)
             f_mean += self.mean_function(X_new)
             f_var = _expand_independent_outputs(f_var, full_cov, full_output_cov)
@@ -139,7 +138,7 @@ class SVGP(models.SVGP):
             if self.fast_algo:
                 f_mean, f_var = self._build_predict_fast(X_new)
             else:
-                # added this. It is just to avoid cholesky decompositions we don't need with VOS
+                Kzz, Kzx, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov)
                 f_mean, f_var = base_conditional_ortho(Kzx, Kzz, Kxx, self.q_mu, full_cov=full_cov, q_sqrt=tf.matrix_band_part(self.q_sqrt, -1, 0), white=self.whiten)
                 f_mean += self.mean_function(X_new)
                 f_var = _expand_independent_outputs(f_var, full_cov, full_output_cov)
@@ -149,20 +148,20 @@ class SVGP(models.SVGP):
         else:
             return f_mean, f_var
 
-    # This is in development
     @params_as_tensors
     def _build_predict_fast(self, X_new, full_cov=False, full_output_cov=False, return_Kzz=False, increments=False):
         
         num_samples = tf.shape(X_new)[0]
-        Kzz, _, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov, fast=True)
-
-        # here we replace the base_conditional function
-        f_mean = self.kern_auxiliary.K_tens_vs_seq(self.q_mu, X_new, increments=increments,apply_scalings=False) #(num_latent, num_examples)
-        # the algorithm above does not take into account the first component of the mean, here we to correct for this.
-        f_mean = tf.transpose(f_mean) - 1. + self.bias #(num_examples, num_latent)
         
-        f_var =  self.kern_auxiliary.Kdiag_rescaled(self.q_sqrt, X_new)  # (num_examples, num_latent)
-        f_var += -1. + 1.- self.first_var  
+        Kzz, _, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov, fast=True)
+        
+        # here we adapt the gpflow base_conditional function
+
+        f_mean = self.kern_auxiliary.inner_product_tens_vs_seq(self.q_mu, X_new) 
+        f_mean = tf.transpose(f_mean) - 1. + self.bias 
+        
+        f_var =  self.kern_auxiliary.Kdiag_rescaled(self.q_sqrt, X_new)  
+        f_var += 1.- self.first_var 
         f_var = Kxx[:,None] - f_var
         
         f_mean += self.mean_function(X_new)
@@ -173,7 +172,8 @@ class SVGP(models.SVGP):
         else:
             return f_mean, f_var
 
-# added this
+''' TO MOVE '''
+# added this 
 def base_conditional_ortho(
     Kmn: tf.Tensor,
     Kmm: tf.Tensor,
@@ -305,3 +305,5 @@ def base_conditional_with_lm_ortho(
     tf.debugging.assert_shapes(shape_constraints, message="base_conditional() return values")
 
     return fmean, fvar
+
+
