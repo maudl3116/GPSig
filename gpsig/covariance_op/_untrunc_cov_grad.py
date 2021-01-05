@@ -15,7 +15,7 @@ def find(name, path):
     for root, dirs, files in os.walk(path):
         if name in files:
             return os.path.join(root, name)
-path = find("untrunc_cov_op_gpu.so",'.')
+path = find("untrunc_cov_op_gpu.so",'..')
 cov_module_gpu = tf.load_op_library(path)
 
 @ops.RegisterGradient("UntruncCov")
