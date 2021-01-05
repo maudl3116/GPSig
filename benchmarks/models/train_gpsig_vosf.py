@@ -49,7 +49,6 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
     X_train, y_train, X_val, y_val, X_test, y_test = load_dataset(dataset, val_split=val_split, test_split=test_split,
                                                                   normalize_data=normalize_data, add_time=True, for_model='sig', max_len=max_len)
     
-
     # when precomputing the signatures, we need to compute the truncation level which ensures that we can compute the M inducing variables
     n_M = gpsig.utils.compute_trunc(M,X_train.shape[2])
     if not inf:

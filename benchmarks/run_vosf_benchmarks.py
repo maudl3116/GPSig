@@ -31,9 +31,9 @@ for i in range(num_experiments):
 
         # train_gpsig_classifier(dataset, num_levels=4, num_inducing=500, max_len=500, num_lags=1, increments=True, learn_weights=False,
         #                        val_split=0.2, experiment_idx=i, save_dir=results_dir)   
-        train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, order = 0, M=500, max_len=500, num_lags=0,fast_algo=False,
-                               val_split=0.2, experiment_idx=i, save_dir=results_dir)    
+        # train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, order = 0, M=500, max_len=500, num_lags=0,fast_algo=False,
+        #                        val_split=0.2, experiment_idx=i, save_dir=results_dir)    
 
         # fast algo
-        # train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=False, order = 0, M=364, max_len=500, num_lags=0, fast_algo=True,
-        #                        val_split=0.2, experiment_idx=i, save_dir=results_dir)  
+        train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=False, order = 0, M=421, max_len=500, num_lags=0, fast_algo=True,
+                               val_split=0.2, experiment_idx=i, save_dir=results_dir)  
