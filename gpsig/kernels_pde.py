@@ -6,28 +6,30 @@ from gpflow.decors import params_as_tensors, params_as_tensors_for, autoflow
 from gpflow import transforms
 from gpflow import settings
 from gpflow.kernels import Kernel
-
+from . import signature_algs_vosf
+from . import signature_algs
 from .sigKer_fast import sig_kern_diag as sig_kern_diag 
 from . import lags
 
 from tensorflow.python.framework import ops
 # need to find a better way to load the module
-import sys, os
-def find(name, path):
-    for root, dirs, files in os.walk(path):
-        if name in files:
-            return os.path.join(root, name)
-path = find("untrunc_cov_op_gpu.so",'..')
-cov_module_gpu = tf.load_op_library(path)
-sys.path.append('../gpsig')
-from covariance_op import _untrunc_cov_grad
+# import sys, os
+# def find(name, path):
+#     for root, dirs, files in os.walk(path):
+#         if name in files:
+#             return os.path.join(root, name)
+# path = find("untrunc_cov_op_gpu.so",'..')
+# cov_module_gpu = tf.load_op_library(path)
+# sys.path.append('../gpsig')
+# from covariance_op import _untrunc_cov_grad
+
 
 
 class UntruncSignatureKernel(Kernel):
     """
     """
-    def __init__(self, input_dim, num_features, lengthscales=1,
-                 order=0, num_lags=None, implementation = 'gpu_op',name=None):
+    def __init__(self, input_dim, num_features, 
+                 order=4, lengthscales=1, num_lags=None, implementation = 'gpu_op',name=None):
         """
         # Inputs:
         ## Args:
@@ -113,7 +115,28 @@ class UntruncSignatureKernel(Kernel):
 
     @autoflow((settings.float_type, [None, None]))
     def compute_K_symm(self, X):
-        return self.K(X)
+        return self.Kdiag(X)
+
+    @autoflow((settings.float_type,), (settings.float_type, [None, None]))
+    def compute_inner_product_tens_vs_seq(self, Z, X): 
+        return self.inner_product_tens_vs_seq(Z, X)
+
+    @autoflow((settings.float_type,), (settings.float_type, [None, None]))
+    def compute_mahalanobis_terms_approx_posterior(self, Z, X): 
+        return self.Mahalanobis_term_approx_posterior(Z, X)
+
+    @autoflow((settings.float_type,), (settings.float_type,))
+    def compute_mahalanobis_tens(self, Z, beta): 
+        return self.Mahalanobis_tens(Z, beta)
+
+    @autoflow((settings.float_type, ))
+    def compute_norms_tens(self, Z): 
+        return self.norms_tens(Z)
+
+    @autoflow((settings.float_type, ))
+    def compute_logs_tens(self, Z): 
+        return self.logs_tens(Z)
+
 
     @params_as_tensors
     def _apply_scaling_and_lags_to_sequences(self, X):
@@ -156,14 +179,274 @@ class UntruncSignatureKernel(Kernel):
         X = self._apply_scaling_and_lags_to_sequences(X)       
 
         if self.implementation == 'cython':
+            # to adapt so that compatible with different base kernels. 
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
-            incr = X[:,1:,:]-X[:,:-1,:]
-            E = tf.matmul(incr,incr,transpose_b=True)
+            E = self._base_kern(X)
+            E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
             sol = tf.ones([num_examples, tf.shape(X)[1]+1,tf.shape(X)[1]+1],dtype=settings.float_type)
             K_diag_ = cov_module_gpu.untrunc_cov(X,E, sol)
-            K_diag = K_diag_[:,:-1,:-1]
+            K_diag = K_diag_[:,:-1,:-1]         
+
         return self.sigma*K_diag[:,-1,-1]
+
+    ##### Helper functions for fast algo VOSF
+
+    def _Mahalanobis_term_approx_posterior(self, Z, X):
+        """
+        # Input
+        :X:             (num_examples, len_examples, num_features) tensor of sequences
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
+        """
+        
+        num_features = tf.shape(Z)[-1]
+        num_examples, len_examples = tf.shape(X)[-3], tf.shape(X)[-2]
+    
+        Z = tf.concat([Z, tf.ones_like(Z)],axis=1)
+
+        X = tf.transpose(X,perm=[0,2,1])
+        M = self._base_kern(tf.reshape(X,[-1,len_examples,1]))  # (num_examples*d, len_examples, len_examples)
+        M = tf.reshape(M,[num_examples, num_features,len_examples,len_examples])  # M[i,d,p,q] = <[x^i_p]_d,[x^j_p]_d>
+        M = tf.transpose(M,perm=[0,3,2,1])  # M[i,p,q,d] = <[x^i_p]_d,[x^j_p]_d>
+        M = M[:,:,None,None,:,:]*Z[None,None,:,:,None,:] 
+        M = tf.reduce_sum(M,axis=-1)
+
+        K_lvls_diag = signature_algs_vosf.signature_kern_rescaled_higher_order(M, self.num_levels)
+        
+        return K_lvls_diag
+
+    def _Mahalanobis_tens(self, Z, beta):
+        """
+        # Input
+        :beta:          (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_tensors) 
+        """
+        
+        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
+
+        M = self._base_kern(tf.reshape(beta,[-1,1,1]))  # (len_tensors*num_tensors*num_features, 1, 1)
+        M = tf.reshape(M,[len_tensors, num_tensors, num_features])  
+        M = M*Z
+        M = tf.reduce_sum(M,axis=-1)  #[len_tensors, num_tensors]
+
+        K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
+        
+        return K_lvls_diag
+
+
+    def _norms_tens(self, Z, embedding=True):
+        """
+        # Input
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
+        """
+        
+        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
+        if embedding:
+            M = tf.reshape( self._base_kern(tf.reshape(Z,[-1,1,num_features])), [len_tensors,num_tensors])
+        else:
+            M = tf.reduce_sum(tf.square(Z),axis=2)
+        K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
+        
+        return K_lvls_diag
+
+    def _logs_tens(self, Z):
+        """
+        # Input
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
+        """
+        
+        M = tf.reduce_sum(tf.log(Z),axis=2) # (num_levels*(num_levels+1)/2, num_tensors)
+    
+        K_lvls_diag = signature_algs_vosf.tensor_logs(M, self.num_levels, tf.shape(Z)[2])
+        
+        return K_lvls_diag
+
+    def _K_tens_vs_seq(self, Z, X):
+        """
+        # Input
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors, if not increments 
+                        else (num_levels*(num_levels+1)/2, num_tensors, 2, num_features)
+        :X:             (num_examples, len_examples, num_features) tensor of sequences 
+        Output
+        :K_lvls:        (num_levels+1,) list of inducing tensors vs input sequences covariance matrices on each T.A. level
+        """
+        
+        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
+        num_examples, len_examples = tf.shape(X)[-3], tf.shape(X)[-2]
+
+        X = tf.reshape(X, [num_examples * len_examples, num_features])
+ 
+        Z = tf.reshape(Z, [num_tensors * len_tensors, num_features])
+        M = tf.reshape(self._base_kern(Z, X), (len_tensors, num_tensors, num_examples, len_examples))
+
+        K_lvls = signature_algs.signature_kern_tens_vs_seq_higher_order(M, self.num_levels, order=self.num_levels, difference=True)
+        
+        return K_lvls
+
+    @params_as_tensors
+    def Mahalanobis_term_approx_posterior(self, Z, X, presliced=False):
+        """
+        Computes diag( S(X)^T(I-\Lambda_r)S(X)^T )  for different matrices \Lambda_r which are represented as rank-1 tensors.
+        -> to rename
+        """
+
+        num_examples = tf.shape(X)[0]
+        
+        if not presliced:
+            X, _ = self._slice(X, None)
+
+        X = tf.reshape(X, (num_examples, -1, self.num_features))
+
+        X = self._apply_scaling_and_lags_to_sequences(X)
+
+        K_lvls_diag = self._Mahalanobis_term_approx_posterior(Z[1:],X)
+
+        K_lvls_diag *= self.sigma          
+        
+        return tf.reduce_sum(K_lvls_diag, axis=0) + 1. - Z[0,:,0][None,:]
+
+
+    @params_as_tensors
+    def Mahalanobis_tens(self, Z, beta):
+        """
+        Computes diag( S(X)^T(I-\Lambda_r)S(X)^T )  for different matrices \Lambda_r which are represented as rank-1 tensors.
+        -> to rename
+        """
+
+        K_lvls_diag = self._Mahalanobis_tens(Z[1:],beta[1:])
+          
+        return tf.reduce_sum(K_lvls_diag, axis=0) - 1. + (Z[0,:,0]*beta[0,:,0]**2)[None,:]
+
+    @params_as_tensors 
+    def norms_tens(self, Z, embedding=True):
+        """
+        Computes the vector of k_phi(z^i,z^i) for z^i in Z
+        """
+        constant_term = Z[0,:,0]
+
+        K_lvls = self._norms_tens(Z[1:],embedding=embedding) 
+        
+        return tf.reduce_sum(K_lvls, axis=0) -1. + constant_term**2
+
+    @params_as_tensors 
+    def logs_tens(self, Z):
+        """
+        Computes the sum of the components of the tensors z^i in Z
+        """
+        constant_term = Z[0,:,0]
+
+        K_lvls = self._logs_tens(Z[1:]) 
+        
+        return tf.reduce_sum(K_lvls, axis=0) + tf.log(constant_term)
+
+    @params_as_tensors
+    def inner_product_tens_vs_seq(self, Z, X, presliced=False):
+        """
+        Computes < S(phi(X)), phi(m_r) > for different rank-1 tensors m_r 
+        """
+
+        if not presliced:
+            X, _ = self._slice(X, None)
+        
+        num_examples = tf.shape(X)[0]
+        X = tf.reshape(X, (num_examples, -1, self.num_features))
+        len_examples = tf.shape(X)[1]
+        
+        num_tensors, len_tensors = tf.shape(Z)[1], tf.shape(Z)[0] - 1
+
+
+        X = self._apply_scaling_and_lags_to_sequences(X)
+
+        Kzx_lvls = self._K_tens_vs_seq(Z[1:], X)  
+        
+        Kzx_lvls *= tf.sqrt(self.sigma) 
+
+        return tf.reduce_sum(Kzx_lvls, axis=0) + tf.sqrt(self.sigma) *(Z[0,:,0][:,None]-1.)
+
+    
+
+    ##### Helper functions for base kernels
+
+    def _square_dist(self, X, X2=None):
+        batch = tf.shape(X)[:-2]
+        Xs = tf.reduce_sum(tf.square(X), axis=-1)
+        if X2 is None:
+            dist = -2 * tf.matmul(X, X, transpose_b=True)
+            dist += tf.reshape(Xs, tf.concat((batch, [-1, 1]), axis=0))  + tf.reshape(Xs, tf.concat((batch, [1, -1]), axis=0))
+            return dist
+
+        X2s = tf.reduce_sum(tf.square(X2), axis=-1)
+        dist = -2 * tf.matmul(X, X2, transpose_b=True)
+        dist += tf.reshape(Xs, tf.concat((batch, [-1, 1]), axis=0)) + tf.reshape(X2s, tf.concat((batch, [1, -1]), axis=0))
+        return dist
+
+
+
+class SignatureRBF(UntruncSignatureKernel):
+    """
+    The signature kernel, which uses an (infinite number of) monomials of vectors - i.e. Gauss/RBF/SquaredExponential kernel - as state-space embedding
+    """
+    def __init__(self, input_dim, num_features, order, num_levels, **kwargs):
+        UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
+        self._base_kern = self._rbf
+        self.num_levels = num_levels
+
+    # __init__.__doc__ = UntruncSignatureKernel.__init__.__doc__
+
+    def _rbf(self, X, X2=None):
+        K = tf.exp(-self._square_dist(X, X2) / 2)
+        return K 
+
+
+class SignatureLinear(UntruncSignatureKernel):
+    """
+    The signature kernel, which uses the identity as state-space embedding 
+    """
+
+    def __init__(self, input_dim, num_features, order, num_levels, **kwargs):
+        UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
+        # self.gamma = Parameter(1.0/float(self.num_features), transform=transforms.positive, dtype=settings.float_type)
+        # self.offsets = Parameter(np.zeros(self.num_features), dtype=settings.float_type)
+        self._base_kern = self._lin
+        self.num_levels = num_levels
+    
+    # __init__.__doc__ = UntruncSignatureKernel.__init__.__doc__
+
+    def _lin(self, X, X2=None):
+        if X2 is None:
+            # K = self.gamma * tf.matmul(X, X, transpose_b = True)
+            K = tf.matmul(X, X, transpose_b = True)
+            return  K
+        else:
+            # return self.gamma * tf.matmul(X, X2, transpose_b = True)
+            return tf.matmul(X, X2, transpose_b = True)
+
+class SignaturePoly(UntruncSignatureKernel):
+    """
+    The signature kernel, which uses a (finite number of) monomials of vectors - i.e. polynomial kernel - as state-space embedding
+    """
+    def __init__(self, input_dim, num_features, order, num_levels, gamma = 1, degree = 3, **kwargs):
+        UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
+        self.gamma = Parameter(gamma, transform=transforms.positive, dtype=settings.float_type)
+        self.degree = Parameter(degree, dtype=settings.float_type, trainable=False)
+        self._base_kern = self._poly
+        self.num_levels = num_levels
+    # __init__.__doc__ = UntruncSignatureKernel.__init__.__doc__
+
+    @params_as_tensors
+    def _poly(self, X, X2=None):
+        if X2 is None:
+            return (tf.matmul(X, X, transpose_b = True) + self.gamma) ** self.degree
+        else:
+            return (tf.matmul(X, X2, transpose_b = True) + self.gamma) ** self.degree
 
 ''' Functions for the Cython covariance operator ''' 
 

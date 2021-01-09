@@ -3,7 +3,7 @@ import tensorflow as tf
 
 from gpflow import settings
 
-def signature_kern_rescaled_higher_order(M, num_levels, order=2, difference = True):
+def signature_kern_rescaled_higher_order(M, num_levels):
     """
     Computes all the S_n(X)^T (I-Lambda_r)S_n(X) for "num_tensors" different diagonal matrices Lambda_r which can be parametrized as sparse tensors
     # Input
@@ -17,8 +17,7 @@ def signature_kern_rescaled_higher_order(M, num_levels, order=2, difference = Tr
     num_tensors, num_examples = tf.shape(M)[3], tf.shape(M)[0]
     K = [tf.ones((num_examples, num_tensors), dtype=settings.float_type)]
     
-    if difference:
-        M = M[:, 1:, ..., 1:] + M[:, :-1, ..., :-1] - M[:, :-1, ..., 1:] - M[:, 1:, ..., :-1]
+    M = M[:, 1:, ..., 1:] + M[:, :-1, ..., :-1] - M[:, :-1, ..., 1:] - M[:, 1:, ..., :-1]
  
     r = 0
     
@@ -26,7 +25,7 @@ def signature_kern_rescaled_higher_order(M, num_levels, order=2, difference = Tr
         R = np.asarray([[M[:,:,r,:,:]]])
         r += 1
         for j in range(1, i):
-            d = min(j+1, order)
+            d = min(j+1, num_levels)
             R_next = np.empty((d,d), dtype=tf.Tensor)
             R_next[0,0] = M[:,:,r,:,:] * tf.cumsum(tf.cumsum(tf.add_n(R.flatten().tolist()), exclusive=True, axis=1), exclusive=True, axis=-1)
             for l in range(1, d):

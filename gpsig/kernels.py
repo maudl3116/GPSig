@@ -186,25 +186,6 @@ class SignatureKernel(Kernel):
     def compute_K_incr_tens_vs_seq(self, Z, X): 
         return self.K_tens_vs_seq(Z, X, increments=True, return_levels=False)
 
-    # added this
-    @autoflow((settings.float_type,), (settings.float_type, [None, None]))
-    def compute_K_diag_rescaled(self, Z, X): 
-        return self.Kdiag_rescaled(Z, X)
-
-    # added this
-    @autoflow((settings.float_type, ))
-    def compute_norms_tens(self, Z): 
-        return self.norms_tens(Z)
-
-    # added this
-    @autoflow((settings.float_type, ))
-    def compute_sums_tens(self, Z): 
-        return self.sums_tens(Z)
-    
-    # added this
-    @autoflow((settings.float_type, ))
-    def compute_logs_tens(self, Z): 
-        return self.logs_tens(Z)
 
     def _K_seq_diag(self, X):
         """
@@ -782,162 +763,8 @@ class SignatureKernel(Kernel):
             else:
                 return tf.reduce_sum(Kxx_lvls, axis=0), tf.reduce_sum(Kxx2_lvls, axis=0), tf.reduce_sum(Kx2x2_lvls_diag, axis=0)
 
-    ##### Helper functions for fast algo VOSF
-
-    # (in development, M may exceed GPU memory capacities?)
-    def _K_seq_diag_rescaled(self, Z, X):
-        """
-        # Input
-        :X:             (num_examples, len_examples, num_features) tensor of sequences
-        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
-        # Output
-        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
-        """
-        
-        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
-        num_examples, len_examples = tf.shape(X)[-3], tf.shape(X)[-2]
-    
-        Z = tf.concat([Z, tf.ones_like(Z)],axis=1)  
-        ZX = Z[:,:,None,None,:]*X[None,None,:,:,:]
-
-        ZX = tf.transpose(ZX,perm=[2,0,1,3,4]) #(num_examples, len_tensors, 2*num_tensors, len_examples,num_features)
-        ZX = tf.reshape(ZX,[num_examples, len_tensors*2*num_tensors*len_examples, num_features])
-        M = tf.reshape(self._base_kern(X,ZX), (num_examples, len_examples, len_tensors, 2*num_tensors,len_examples))
-
-        K_lvls_diag = signature_algs_vosf.signature_kern_rescaled_higher_order(M, self.num_levels, order=self.order, difference=self.difference)
-        
-        return K_lvls_diag
 
 
-    def _norms_tens(self, Z):
-        """
-        # Input
-        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
-        # Output
-        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
-        """
-        
-        M = tf.reduce_sum(tf.square(Z),axis=2) # (num_levels*(num_levels+1)/2, num_tensors)
-    
-        K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
-        
-        return K_lvls_diag
-
-    def _sums_tens(self, Z):
-        """
-        # Input
-        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
-        # Output
-        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
-        """
-        
-        M = tf.reduce_sum(Z,axis=2) # (num_levels*(num_levels+1)/2, num_tensors)
-    
-        K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
-        
-        return K_lvls_diag
-
-    def _logs_tens(self, Z):
-        """
-        # Input
-        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
-        # Output
-        :K:             (num_levels+1, num_examples) tensor of (unnormalized) diagonals of signature kernel
-        """
-        
-        M = tf.reduce_sum(tf.log(Z),axis=2) # (num_levels*(num_levels+1)/2, num_tensors)
-    
-        K_lvls_diag = signature_algs_vosf.tensor_logs(M, self.num_levels, tf.shape(Z)[2])
-        
-        return K_lvls_diag
-
-    @params_as_tensors
-    def Kdiag_rescaled(self, Z, X, presliced=False):
-        """
-        Computes diag( S(X)^T(I-\Lambda_r)S(X)^T )  for different matrices \Lambda_r which are represented as rank-1 tensors.
-        -> to rename
-        """
-
-        num_examples = tf.shape(X)[0]
-        
-        if not presliced:
-            X, _ = self._slice(X, None)
-
-        X = tf.reshape(X, (num_examples, -1, self.num_features))
-
-        X = self._apply_scaling_and_lags_to_sequences(X)
-
-        K_lvls_diag = self._K_seq_diag_rescaled(Z,X)
-
-        K_lvls_diag *= self.sigma          
-
-        return tf.reduce_sum(K_lvls_diag, axis=0)
-
-    @params_as_tensors 
-    def norms_tens(self, Z):
-        """
-        Computes the vector of <z^i,z^i> for z^i in Z
-        """
-        
-        K_lvls = self._norms_tens(Z) 
-
-        K_lvls *= self.variances[:, None]
-        
-        return tf.reduce_sum(K_lvls, axis=0)
-
-    @params_as_tensors 
-    def sums_tens(self, Z):
-        """
-        Computes the vector of <z^i,z^i> for z^i in Z
-        """
-
-        K_lvls = self._sums_tens(Z) 
-
-        K_lvls *= self.variances[:, None]
-        
-        return tf.reduce_sum(K_lvls, axis=0)
-
-    @params_as_tensors 
-    def logs_tens(self, Z):
-        """
-        Computes the vector of <z^i,z^i> for z^i in Z
-        """
-
-        K_lvls = self._logs_tens(Z) 
-
-        K_lvls *= self.variances[:, None]
-        
-        return tf.reduce_sum(K_lvls, axis=0)
-
-    @params_as_tensors
-    def inner_product_tens_vs_seq(self, Z, X, presliced=False):
-        """
-        Computes < S(X), m_r > for different rank-1 tensors m_r 
-        """
-
-        if not presliced:
-            X, _ = self._slice(X, None)
-        
-        num_examples = tf.shape(X)[0]
-        X = tf.reshape(X, (num_examples, -1, self.num_features))
-        len_examples = tf.shape(X)[1]
-        
-        num_tensors, len_tensors = tf.shape(Z)[1], tf.shape(Z)[0]
-
-
-        X = self._apply_scaling_and_lags_to_sequences(X)
-
-        Kzx_lvls = self._K_tens_vs_seq(Z, X, increments=False)  # here we can reuse the method _K_tens_vs_seq from GPSig
-
-        Kzx_lvls *= tf.sqrt(self.sigma) * self.variances[:, None, None]  
-        
-        return tf.reduce_sum(Kzx_lvls, axis=0)
-
-
-
-
-
-  
     ##### Helper functions for base kernels
 
     def _square_dist(self, X, X2=None):
@@ -952,7 +779,6 @@ class SignatureKernel(Kernel):
         dist = -2 * tf.matmul(X, X2, transpose_b=True)
         dist += tf.reshape(Xs, tf.concat((batch, [-1, 1]), axis=0)) + tf.reshape(X2s, tf.concat((batch, [1, -1]), axis=0))
         return dist
-
 
     def _euclid_dist(self, X, X2 = None):
         r2 = self._square_dist(X, X2)
@@ -1034,14 +860,14 @@ class SignatureRBF(SignatureKernel):
         # self.sigma = Parameter([1.0], transform=transforms.positive, dtype=settings.float_type)
         # self.gamma = Parameter(1.0/float(self.num_features), transform=transforms.positive, dtype=settings.float_type)
         self._base_kern = self._rbf
-    
+ 
     __init__.__doc__ = SignatureKernel.__init__.__doc__
 
     def _rbf(self, X, X2=None):
         K = tf.exp(-self._square_dist(X, X2) / 2)
         return K 
 
-    
+
 
 SignatureGauss = SignatureRBF
 
