@@ -13,15 +13,15 @@ from . import lags
 
 from tensorflow.python.framework import ops
 # need to find a better way to load the module
-# import sys, os
-# def find(name, path):
-#     for root, dirs, files in os.walk(path):
-#         if name in files:
-#             return os.path.join(root, name)
-# path = find("untrunc_cov_op_gpu.so",'..')
-# cov_module_gpu = tf.load_op_library(path)
-# sys.path.append('../gpsig')
-# from covariance_op import _untrunc_cov_grad
+import sys, os
+def find(name, path):
+    for root, dirs, files in os.walk(path):
+        if name in files:
+            return os.path.join(root, name)
+path = find("untrunc_cov_op_gpu.so",'..')
+cov_module_gpu = tf.load_op_library(path)
+sys.path.append('../gpsig')
+from covariance_op import _untrunc_cov_grad
 
 
 
