@@ -183,7 +183,7 @@ class UntruncSignatureKernel(Kernel):
             # to adapt so that compatible with different base kernels. 
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
-            E = self._base_kern(X)
+            E = tf.matmul(X,X,transpose_b=True)
             E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
             sol = tf.ones([num_examples, tf.shape(X)[1]+1,tf.shape(X)[1]+1],dtype=settings.float_type)
             K_diag_ = cov_module_gpu.untrunc_cov(X,E, sol)
