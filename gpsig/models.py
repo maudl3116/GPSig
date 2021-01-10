@@ -48,7 +48,7 @@ class SVGP(models.SVGP):
 
             # restriction
             assert num_inducing==np.sum([ self.feature.d**k for k in range(self.feature.sig_level+1) ]), "cannot use the fast algorithm if we have a number of inducing features not corresponding to a truncation level"
- 
+            
             # reparametrizing the variational means q_mu as sparse tensors
             if q_mu is None:
                 # should not initialize to zero, otherwise the gradients are always zero
@@ -161,7 +161,7 @@ class SVGP(models.SVGP):
         constant = - tf.cast(self.q_mu.shape[1]*self.feature.M, dtype=settings.float_type)
                 
         # trace: tr(Sq) 
-        trace = tf.reduce_sum( self.kern.norms_tens(self.q_sqrt, embedding=False) ) 
+        trace = tf.reduce_sum( self.kern.norms_tens(self.q_sqrt) ) 
         if not self.q_diag:
             trace += tf.reduce_sum( self.kern.norms_tens(self.beta) ) 
 
@@ -169,7 +169,8 @@ class SVGP(models.SVGP):
         logdet_qcov = tf.reduce_sum( self.kern.logs_tens(self.q_sqrt**2) )
         if not self.q_diag:
             # compute beta^T diag(Sq^-1) beta
-            tmp = self.kern.Mahalanobis_tens(1./(self.q_sqrt**2), self.beta)  
+            tmp = (1./(self.q_sqrt))*self.beta 
+            tmp = self.kern.norms_tens(tmp)
             logdet_qcov += tf.reduce_sum( tf.log(1.+tmp) ) 
 
         twoKL = mahalanobis + constant - logdet_qcov + trace
