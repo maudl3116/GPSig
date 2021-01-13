@@ -54,7 +54,7 @@ class UntruncSignatureKernel(Kernel):
         self.num_features = num_features
         self.len_examples = self._validate_number_of_features(input_dim, num_features)
 
-        assert num_lags is None, "VOSF does not handle lags yet"
+        # assert num_lags is None, "VOSF does not handle lags yet"
         assert implementation in ['cython', 'gpu_op'], "implementation should be 'cython' or 'gpu_op'"
         self.implementation = implementation
         self.order = order
@@ -148,7 +148,7 @@ class UntruncSignatureKernel(Kernel):
         num_examples, len_examples, _ = tf.unstack(tf.shape(X))
         
         num_features = self.num_features * (self.num_lags + 1)
-        
+
         if self.num_lags > 0:
             X = lags.add_lags_to_sequences(X, self.lags)
 
@@ -162,8 +162,6 @@ class UntruncSignatureKernel(Kernel):
         
         X = tf.reshape(X, (num_examples, len_examples, num_features))
         return X
-
-
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False,name=None):
@@ -180,7 +178,6 @@ class UntruncSignatureKernel(Kernel):
         X = self._apply_scaling_and_lags_to_sequences(X)       
 
         if self.implementation == 'cython':
-            # to adapt so that compatible with different base kernels. 
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
             E = tf.matmul(X,X,transpose_b=True)
