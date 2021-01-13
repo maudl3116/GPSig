@@ -19,7 +19,7 @@ path = find("untrunc_cov_op_gpu.so",'..')
 cov_module_gpu = tf.load_op_library(path)
 
 @ops.RegisterGradient("UntruncCov")
-def _untrunc_cov_grad(op, grad1):
+def _untrunc_cov_grad(op, grad):
   """The gradients for `untrunc_cov`.
 
   Args:
@@ -29,10 +29,12 @@ def _untrunc_cov_grad(op, grad1):
 
   Returns:
     Gradients with respect to the input of `untrunc_cov`.
+
+  Note: if one wants to use a different PDE solver for K_rev, call untrunc_cov_rev instead of untrunc_cov 
   """
 
   # get what we need to solve "reverse" pdes on cuda
-  X = op.inputs[0]  
+  X = op.inputs[0]
   E = op.inputs[1]
   sol = op.inputs[2]
   E_rev = tf.reverse(E,axis=[1],name='reverse1')
@@ -52,14 +54,6 @@ def _untrunc_cov_grad(op, grad1):
   M = paths_shape[1]
   D = paths_shape[2]
 
-  # in principle we have only computed the lower triangular part of K_diag and K_diag_rev because they are symmetric as full_cov is false. 
-  # however this has not been implemented yet on cuda
-  # MM = tf.shape(K)[1]
-  # diag_forward = tf.matrix_diag_part(K)
-  # K += tf.transpose(K,perm=[0,2,1]) - diag_forward[:,:,None]*tf.eye(MM,dtype=tf.float64)[None,:,:]
-  # diag_backward = tf.matrix_diag_part(K_rev)
-  # K_rev += tf.transpose(K_rev,perm=[0,2,1]) - diag_backward[:,:,None]*tf.eye(MM,dtype=tf.float64)[None,:,:]
-
   inc_X = (X[:,1:,:]-X[:,:-1,:])                
   # Reorganize the K_rev matrix (maybe we could do this on cuda directly)
   K_rev_rev = tf.reverse(K_rev,axis=[1],name='reverse1')
@@ -72,5 +66,6 @@ def _untrunc_cov_grad(op, grad1):
   
   grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=tf.float64)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=tf.float64), K_grad], axis=1)
 
-  return [grad1[:,-1,-1][:,None,None]*grad_points, None, None]
+  # grad1 is grad_op.outputs[0](loss) and is non-zero only at grad1[:,-2,-2] and not grad1[:,-1,-1]!
+  return [grad[:,-2,-2][:,None,None]*grad_points, None, None]
 
