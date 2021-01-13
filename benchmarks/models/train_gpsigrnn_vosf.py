@@ -20,10 +20,18 @@ from utils import *
 
 from sklearn.metrics import accuracy_score, classification_report
 
-def train_gpsigrnn_vosf_classifier(dataset, num_hidden=128, num_levels=4, normalize_data=True, minibatch_size=50, rnn_type='lstm', use_dropout=True,
+def train_gpsigrnn_vosf_classifier(dataset, num_hidden=128, num_inducing=500, order=0, fast_algo=False, num_levels=4, normalize_data=True, minibatch_size=50, rnn_type='lstm', use_dropout=True,
                               max_len=500, num_lags=None, val_split=None, test_split=None, experiment_idx=None, save_dir='./GPSigRNN/'):
     
-    num_inducing = np.sum([num_hidden**i for i in range(num_levels+1)])
+
+    # We cannot precompute the signatures, hence we either use the fast algorithm or iisignature. 
+    if fast_algo:
+        num_inducing = np.sum([(num_hidden*(num_lags+1))**i for i in range(num_levels+1)])
+        compute_sig = False
+        q_diag = True
+    else:
+        compute_sig = True
+        q_diag = False
 
     rnn_type = rnn_type.lower()
     if rnn_type not in ['lstm', 'gru']: raise ValueError('rnn_type should be \'LSTM\' or \'GRU\'')
@@ -70,8 +78,8 @@ def train_gpsigrnn_vosf_classifier(dataset, num_hidden=128, num_levels=4, normal
 
         nn_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, rnn_type)
      
-        feat = gpsig.inducing_variables_vosf.UntruncInducingOrthogonalTensors(input_dim=gp_input_dim, d = num_hidden, M = num_inducing) 
-        k = gpsig.kernels_pde.UntruncSignatureKernel(gp_input_dim, num_features=num_hidden, order=0, implementation='cython')
+        feat = gpsig.inducing_variables_vosf.UntruncInducingOrthogonalTensors(input_dim=gp_input_dim, d = num_hidden, M = num_inducing, num_lags=num_lags, compute_sig=compute_sig) 
+        k = gpsig.kernels_pde.UntruncSignatureKernel(gp_input_dim, num_features=num_hidden, order=order)
 
         if num_classes == 2:
             lik = gp.likelihoods.Bernoulli()
@@ -80,13 +88,13 @@ def train_gpsigrnn_vosf_classifier(dataset, num_hidden=128, num_levels=4, normal
             lik = gp.likelihoods.MultiClass(num_classes)
             num_latent = num_classes
 
-        m = gpsig.models.SVGP(fx_tens, y_tens, kern=k, feat=feat, likelihood=lik, num_latent=num_latent, q_diag = True,
-                              minibatch_size=None, whiten=True, fast_algo=True, num_data=num_train)
+        m = gpsig.models.SVGP(fx_tens, y_tens, kern=k, feat=feat, likelihood=lik, num_latent=num_latent, q_diag = q_diag,
+                              minibatch_size=None, whiten=True, fast_algo=fast_algo, num_data=num_train)
 
         
         # some tensorflow magic
         loss = - m.likelihood_tensor
-        fmean, fvar = m._build_predict_fast(fx_tens)  #_build_predict does not work for some reason. Although it should call _build_predict_fast...
+        fmean, fvar = m._build_predict(fx_tens) 
         ymean, yvar = m.likelihood.predict_mean_and_var(fmean, fvar)
 
         lpd = m.likelihood.predict_density(fmean, fvar, y_tens)
@@ -168,7 +176,7 @@ def train_gpsigrnn_vosf_classifier(dataset, num_hidden=128, num_levels=4, normal
 
         #### train variational distribution 
         m.kern.set_trainable(False)
-        history = fit_nn_with_gp_layer(X_train, y_train, m.trainable_tensors, x_tens, y_tens, loss, sess, minibatch_size=minibatch_size, max_epochs=500, history=hist)
+        history = fit_nn_with_gp_layer(X_train, y_train, m.trainable_tensors, x_tens, y_tens, loss, sess, minibatch_size=minibatch_size, max_epochs=5000, history=hist)
 
     #     ## evaluate model
         test_nlpp = test_nlpp()

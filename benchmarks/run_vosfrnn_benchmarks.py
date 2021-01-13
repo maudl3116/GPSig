@@ -42,5 +42,5 @@ for i in range(num_experiments):
             with open(results_filename, 'w'):
                 pass
 
-            train_gpsigrnn_vosf_classifier(dataset, num_levels=4, num_hidden=num_hidden, rnn_type=rnn_type, use_dropout=use_dropout, 
+            train_gpsigrnn_vosf_classifier(dataset, num_inducing=500, num_hidden=num_hidden, fast_algo=True, num_levels=4, rnn_type=rnn_type, use_dropout=use_dropout, 
                                       max_len=500, num_lags=0, val_split=0.2, experiment_idx=i, save_dir=results_dir)
