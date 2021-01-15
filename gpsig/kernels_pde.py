@@ -242,7 +242,7 @@ class UntruncSignatureKernel(Kernel):
         
         return K_lvls_diag
 
-    def _K_tens_vs_seq(self, Z, X):
+    def _K_tens_vs_seq_vosf(self, Z, X):
         """
         # Input
         :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors, if not increments 
@@ -326,7 +326,7 @@ class UntruncSignatureKernel(Kernel):
 
         X = self._apply_scaling_and_lags_to_sequences(X)
 
-        Kzx_lvls = self._K_tens_vs_seq(Z[1:], X)  
+        Kzx_lvls = self._K_tens_vs_seq_vosf(Z[1:], X)  
         
         Kzx_lvls *= tf.sqrt(self.sigma) 
 
