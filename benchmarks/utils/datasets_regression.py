@@ -53,7 +53,8 @@ def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False,
     
     X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_split, shuffle=True)
     num_val = len(X_val)
-
+    num_train = len(X_train)
+    
     if normalize_data:
         scaler = StandardScaler()
         scaler.fit(np.concatenate(X_train, axis=0))
