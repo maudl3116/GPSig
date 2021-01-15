@@ -8,7 +8,6 @@ import gpsig
 from utils.load_tsfiles import load_from_tsfile_to_dataframe 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import train_test_split
-from tslearn.datasets import UCR_UEA_datasets
 
 def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False, normalize_output=False, add_time=False, max_len=None, val_split=None, return_min_len=False):
     
@@ -52,9 +51,8 @@ def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False,
                             for i in range(int(np.ceil(x.shape[0]/np.ceil(x.shape[0]/max_len))))], axis=0) for x in X_test]
     
     
-    ind_train, ind_val, y_train, y_val = train_test_split(np.arange(len(y_train)), y_train, test_size=val_split, shuffle=True)
-    num_val = len(y_val)
-
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=val_split, shuffle=True)
+    num_val = len(X_val)
 
     if normalize_data:
         scaler = StandardScaler()

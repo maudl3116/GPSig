@@ -21,7 +21,7 @@ from gpsig.precompute_signatures import SignatureCalculator
 def mean_absolute_percentage_error(y_true,y_pred):
     epsilon = np.finfo(np.float64).eps
     mape = np.abs(y_pred - y_true) / np.maximum(np.abs(y_true), epsilon)
-    return mape
+    return np.mean(mape)
 
 def get_signatures(signature_calculator, data):
     return signature_calculator.compute_signature(data)
@@ -43,6 +43,7 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
     print('####################################')
     if sig_precompute:
         compute_sig=False
+        assert num_lags is None or num_lags==0, "cannot precompute signatures and use lead-lags"
     else:
         compute_sig=True
         
@@ -127,7 +128,7 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
                 slice_batch = slice(i*batch_size, np.minimum((i+1)*batch_size, X.shape[0]))
                 X_batch = X[slice_batch]
                 pred_batch = m.predict_y(X_batch)[0]
-                y_pred[slice_batch] = pred_batch[:,0] # to check
+                y_pred[slice_batch] = pred_batch[:,0]
             return y_pred
 
         def batch_predict_density(m, X, y, batch_size=None):
