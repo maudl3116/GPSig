@@ -397,7 +397,7 @@ class SignatureKernel(Kernel):
 
         Z = tf.reshape(Z, (len_tensors, num_tensors, 2, num_features))
         return Z
-            
+
     @params_as_tensors
     def K(self, X, X2 = None, presliced = False, return_levels = False, presliced_X = False, presliced_X2 = False):
         """
@@ -475,6 +475,36 @@ class SignatureKernel(Kernel):
             return K_lvls
         else:
             return tf.reduce_sum(K_lvls, axis=0)
+    
+    # added this
+    @params_as_tensors
+    def K_norms(self, X, presliced=False):
+        """
+        Computes the unnormalized diagonal of a square signature kernel matrix
+        """
+        # instead of returning the varainces because k(x,x)_level = 1, we want to use this function to compute the norms.
+        num_examples = tf.shape(X)[0]
+        
+        # if self.normalization:
+            
+        #     if return_levels:
+        #         return tf.tile(self.sigma * self.variances[:, None], [1, num_examples])
+        #     else:
+        #         return tf.fill((num_examples,), self.sigma * tf.reduce_sum(self.variances))
+                
+        if not presliced:
+            X, _ = self._slice(X, None)
+
+        X = tf.reshape(X, (num_examples, -1, self.num_features))
+
+        X = self._apply_scaling_and_lags_to_sequences(X)
+
+        K_lvls_diag = self._K_seq_diag(X)
+
+        K_lvls_diag *= self.variances[:, None]         
+
+        return K_lvls_diag
+
 
     @params_as_tensors
     def Kdiag(self, X, presliced=False, return_levels=False):

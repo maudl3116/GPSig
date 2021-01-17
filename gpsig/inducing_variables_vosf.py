@@ -136,13 +136,14 @@ class TruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
     # :M:             the number of inducing variables
     """
 
-    def __init__(self, input_dim, d, M,num_lags=0, **kwargs):
+    def __init__(self, input_dim, d, M,compute_sig=False,num_lags=0 **kwargs):
        
         super().__init__(**kwargs)
         self.input_dim = input_dim
         self.d = d
         self.M = M
         self.num_lags = num_lags
+        self.compute_sig = compute_sig
 
         # compute the truncation level the "closest to M"
         self.sig_level = compute_trunc(M,(num_lags+1)*d)
@@ -177,7 +178,12 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
             Kxx = kern.K(X_new[:,:feat.input_dim],return_levels = False)  
             Kxx += jitter * tf.eye(tf.shape(X)[0], dtype=settings.dtypes.float_type)
         else:
-            Kxx = kern.Kdiag(X_new[:,:feat.input_dim],return_levels = False) 
+            if kern.normalization:
+                Kxx_un = kern.K_norms(X_new[:,:feat.input_dim])
+                Kzx /= tf.repeat(Kxx_un,repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)
+                Kzx *= tf.sqrt(kern.sigma)
+            else:
+                Kxx = kern.Kdiag(X_new[:,:feat.input_dim],return_levels = False) 
             Kxx += jitter
     return Kzz, Kzx, Kxx
 
@@ -205,11 +211,13 @@ def Kuf(feat, kern, X_new):
             powers_levels = tf.pow(levels,indices)
             powers = tf.math.reduce_prod(powers_levels,axis=1)
             S_tf/=powers[None,:]
-        ones = tf.ones([num_examples,1],dtype=settings.dtypes.float_type)
-        full_S = tf.concat([ones,S_tf],axis=1)
-        full_S *= tf.sqrt(kern.sigma)
-        Kzx = tf.transpose(full_S)
 
+        ones = tf.ones([num_examples,1],dtype=settings.dtypes.float_type)
+
+        full_S = tf.concat([ones,S_tf],axis=1)
+        if not kern.normalization:
+            full_S *= tf.sqrt(kern.sigma)
+        Kzx = tf.transpose(full_S)
     return Kzx
 
 @dispatch(TruncInducingOrthogonalTensors, SignatureKernel)
