@@ -403,7 +403,7 @@ def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and
                                                 timestamps_for_dimension = pd.DatetimeIndex(timestamps_for_dimension)
 
                                             instance_list[this_line_num_dimensions].append(
-                                                pd.Series(index=timestamps_for_dimension, data=values_for_dimension))
+                                                pd.Series(index=timestamps_for_dimension, data=values_for_dimension).fillna(method='bfill').fillna(method='ffill')) #added fillna
                                             this_line_num_dimensions += 1
 
                                             timestamps_for_dimension = []
@@ -498,7 +498,7 @@ def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and
                             if dimension:
                                 data_series = dimension.split(",")
                                 data_series = [float(i) for i in data_series]
-                                instance_list[dim].append(pd.Series(data_series))
+                                instance_list[dim].append(pd.Series(data_series).fillna(method='bfill').fillna(method='ffill')) #added fillna
                             else:
                                 instance_list[dim].append(pd.Series())
 
@@ -525,6 +525,7 @@ def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and
 
         for dim in range(0, num_dimensions):
             data['dim_' + str(dim)] = instance_list[dim]
+            data['dim_' + str(dim)] = data['dim_' + str(dim)]
 
         # Check if we should return any associated class labels separately
 
