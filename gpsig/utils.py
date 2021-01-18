@@ -132,3 +132,24 @@ def get_powers(d,sig_level):
         powers[i][val-1]=count
 
     return tf.convert_to_tensor(powers,dtype=settings.float_type)
+
+
+def get_names_signature_features(d,sig_level,names):
+    '''
+    This function uses the the pandas package, to get the order of the first M=(d^{sig_level+1}-1)/(d-1) signature features
+    Returns the tensor of multi-indices corresponding to the first (d^{sig_level+1}-1)/(d-1) signature features 
+    Input:
+        -(int) d: the state-space dimension of the data
+        -(int) sig_level: determines the number of inducing features in VOS which is precisely M=(d^{sig_level+1}-1)/(d-1) 
+        -(str) names: list of names (str) of the d dimensions of the time-series
+    Output:
+        - (str) feature_names: the M names of the first M=(d^{sig_level+1}-1)/(d-1) signature features 
+    '''
+    feature_names = []
+    feature_names+=[names[i] for i in np.arange(0,d)]
+
+    for level in range(2,sig_level+1):
+        multi_indices = pd.MultiIndex.from_product([names for i in range(level)]).values
+        feature = ['-'.join(list(index)) for index in multi_indices]
+        feature_names+=feature
+    return feature_names
