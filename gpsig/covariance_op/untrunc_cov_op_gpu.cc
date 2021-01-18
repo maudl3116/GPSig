@@ -14,6 +14,7 @@ REGISTER_OP("UntruncCov")
   .Input("paths: double")
   .Input("incr: double")
   .Input("sol: double")
+  .Input("order: int")
   .Output("pdes_sol: double")
   .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c){
     // input 0 is just because we need to access it for the gradients 
@@ -28,6 +29,7 @@ REGISTER_OP("UntruncCovRev")
   .Input("paths: double")
   .Input("incr: double")
   .Input("sol: double")
+  .Input("order: int")
   .Output("pdes_sol: double")
   .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c){
     // input 0 is just because we need to access it for the gradients 

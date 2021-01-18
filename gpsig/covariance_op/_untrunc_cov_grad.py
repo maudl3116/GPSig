@@ -8,6 +8,8 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import sparse_ops
 
+from gpflow import settings
+
 # need to find a better way to load the module
 import os
 import tensorflow as tf
@@ -37,6 +39,7 @@ def _untrunc_cov_grad(op, grad):
   X = op.inputs[0]
   E = op.inputs[1]
   sol = op.inputs[2]
+  order = op.inputs[3]
   E_rev = tf.reverse(E,axis=[1],name='reverse1')
   E_rev = tf.reverse(E_rev,axis=[2],name='reverse2')
 
@@ -54,15 +57,18 @@ def _untrunc_cov_grad(op, grad):
   M = paths_shape[1]
   D = paths_shape[2]
 
-  inc_X = (X[:,1:,:]-X[:,:-1,:])                
+  inc_X = (X[:,1:,:]-X[:,:-1,:])/tf.cast(2**order, settings.float_type) 
+  inc_X = tf.repeat(inc_X, repeats=2**order, axis=1) #(A,(2**n)*(M-1),D)  increments on the finer grid
+                  
   # Reorganize the K_rev matrix (maybe we could do this on cuda directly)
   K_rev_rev = tf.reverse(K_rev,axis=[1],name='reverse1')
   K_rev_rev = tf.reverse(K_rev_rev,axis=[2],name='reverse2')
   
   KK = (K[:,:-1,:-1] * K_rev_rev[:,1:,1:])                             
   K_grad = KK[:,:,:,None]*inc_X[:,None,:,:]                            
-  K_grad = tf.reduce_sum(K_grad,axis=2)                                
-  K_grad =  tf.reduce_sum(tf.reshape(K_grad,(A,M-1,1,D)),axis=2)       
+  K_grad = tf.reduce_sum(K_grad,axis=2)/tf.cast(2**order, settings.float_type)                               
+  K_grad =  tf.reduce_sum(tf.reshape(K_grad,(A,M-1,2**order,D)),axis=2)  # (A,M-1,D)
+   
   
   grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=tf.float64)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=tf.float64), K_grad], axis=1)
 

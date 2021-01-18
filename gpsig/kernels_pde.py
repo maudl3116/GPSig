@@ -58,6 +58,8 @@ class UntruncSignatureKernel(Kernel):
         assert implementation in ['cython', 'gpu_op'], "implementation should be 'cython' or 'gpu_op'"
         self.implementation = implementation
         self.order = order
+        if implementation=='gpu_op':
+            assert ((2**self.order)*(self.len_examples-1)+ 1) < 1024, "discretization level of the PDE solver too large, to use the GPU operator"
         self.sigma = Parameter(1., transform=transforms.positive, dtype=settings.float_type)
         self.num_levels = num_levels
 
@@ -180,10 +182,12 @@ class UntruncSignatureKernel(Kernel):
         if self.implementation == 'cython':
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
-            E = tf.matmul(X,X,transpose_b=True)
+            E = tf.matmul(X,X,transpose_b=True) 
             E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
-            sol = tf.ones([num_examples, tf.shape(X)[1]+1,tf.shape(X)[1]+1],dtype=settings.float_type)
-            K_diag_ = cov_module_gpu.untrunc_cov(X,E, sol)
+            if self.order>0:
+                E = tf.repeat(tf.repeat(E, repeats=2**self.order, axis=1)/tf.cast(2**self.order, settings.float_type), repeats=2**self.order, axis=2)/tf.cast(2**self.order, settings.float_type)
+            sol = tf.ones([num_examples, (2**self.order)*(tf.shape(X)[1]-1)+2,(2**self.order)*(tf.shape(X)[1]-1)+2],dtype=settings.float_type)
+            K_diag_ = cov_module_gpu.untrunc_cov(X,E, sol,self.order)
             K_diag = K_diag_[:,:-1,:-1]         
 
         return self.sigma*K_diag[:,-1,-1]
