@@ -501,7 +501,7 @@ class SignatureKernel(Kernel):
 
         K_lvls_diag = self._K_seq_diag(X)
 
-        K_lvls_diag *= self.variances[:, None]         
+        # K_lvls_diag *= self.variances[:, None]         
 
         return tf.fill((num_examples,), self.sigma * tf.reduce_sum(self.variances)), K_lvls_diag 
 

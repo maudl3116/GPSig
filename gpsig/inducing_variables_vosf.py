@@ -136,7 +136,7 @@ class TruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
     # :M:             the number of inducing variables
     """
 
-    def __init__(self, input_dim, d, M,compute_sig=False,num_lags=0 **kwargs):
+    def __init__(self, input_dim, d, M,compute_sig=False,num_lags=0, **kwargs):
        
         super().__init__(**kwargs)
         self.input_dim = input_dim
@@ -176,14 +176,12 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
         # Computing Kxx (with the truncated signature kernel here)
         if full_f_cov:
             Kxx = kern.K(X_new[:,:feat.input_dim],return_levels = False)  
-            Kxx += jitter * tf.eye(tf.shape(X)[0], dtype=settings.dtypes.float_type)
+            Kxx += jitter * tf.eye(tf.shape(X_new)[0], dtype=settings.dtypes.float_type)
         else:
             if kern.normalization:
-                # Kxx would be 1 for all x (or sum of variances if not set to 1), but here we need to get back the norms 
-                # to corrext Kzx. 
+                # Kxx is a constant w.r.t  x, but here we need to get back the norms to corrext Kzx (the signatures). 
                 Kxx, Kxx_un = kern.K_norms(X_new[:,:feat.input_dim])
-                Kzx /= tf.repeat(Kxx_un[:(feat.sig_level+1)],repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)
-                Kzx *= tf.sqrt(kern.sigma)
+                Kzx /= tf.repeat(tf.sqrt(Kxx_un[:(feat.sig_level+1)]),repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)[:feat.M,:]
             else:
                 Kxx = kern.Kdiag(X_new[:,:feat.input_dim],return_levels = False) 
             Kxx += jitter
@@ -200,7 +198,7 @@ def Kuf(feat, kern, X_new):
     with params_as_tensors_for(feat,kern):
         num_examples = tf.shape(X_new)[0]
 
-        if feat.compute_sig:
+        if feat.compute_sig: # compute Kuf with iisignature 
             # X, _ = kern._slice(X_new, None)
             X = tf.reshape(X_new, (num_examples, -1, feat.d))
             X = kern._apply_scaling_and_lags_to_sequences(X)
@@ -217,9 +215,12 @@ def Kuf(feat, kern, X_new):
         ones = tf.ones([num_examples,1],dtype=settings.dtypes.float_type)
 
         full_S = tf.concat([ones,S_tf],axis=1)
-        if not kern.normalization:
-            full_S *= tf.sqrt(kern.sigma)
         Kzx = tf.transpose(full_S)
+
+        Kzx *= tf.repeat(tf.sqrt(kern.variances[:(feat.sig_level+1),None]),repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)[:feat.M,:] 
+        Kzx *= tf.sqrt(kern.sigma)
+
+        # note that if normalization, we need Kxx to return the true Kzx (hence use Kuu_Kuf_Kff)
     return Kzx
 
 @dispatch(TruncInducingOrthogonalTensors, SignatureKernel)
