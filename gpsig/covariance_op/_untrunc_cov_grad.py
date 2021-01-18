@@ -44,7 +44,7 @@ def _untrunc_cov_grad(op, grad):
   E_rev = tf.reverse(E_rev,axis=[2],name='reverse2')
 
   # solve the "reverse" pdes on cuda
-  K_rev_ = cov_module_gpu.untrunc_cov(X,E_rev, sol)
+  K_rev_ = cov_module_gpu.untrunc_cov(X,E_rev, sol, order)
   K_rev = K_rev_[:,:-1,:-1]
 
   # get what we need to compute the gradients
@@ -73,5 +73,5 @@ def _untrunc_cov_grad(op, grad):
   grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=tf.float64)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=tf.float64), K_grad], axis=1)
 
   # grad1 is grad_op.outputs[0](loss) and is non-zero only at grad1[:,-2,-2] and not grad1[:,-1,-1]!
-  return [grad[:,-2,-2][:,None,None]*grad_points, None, None]
+  return [grad[:,-2,-2][:,None,None]*grad_points, None, None,None]
 
