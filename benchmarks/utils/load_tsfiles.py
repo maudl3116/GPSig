@@ -34,7 +34,7 @@ class TsFileParseException(Exception):
 
 
 def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and_y=True,
-                                  replace_missing_vals_with='NaN'):
+                                  replace_missing_vals_with='NaN', nb_load=-1):
     """Loads data from a .ts file into a Pandas DataFrame.
     Parameters
     ----------
@@ -45,6 +45,8 @@ def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and
         This is only relevant for data that
     replace_missing_vals_with: str
        The value that missing values in the text file should be replaced with prior to parsing.
+    nb_load: int
+       If -1 loads the full dataset, otherwise loads the first nb_load time series
     Returns
     -------
     DataFrame, ndarray
@@ -77,6 +79,8 @@ def load_from_tsfile_to_dataframe(full_file_path_and_name, return_separate_X_and
     # print(full_file_path_and_name)
     with open(full_file_path_and_name, 'r', encoding='utf-8') as file:
         for line in tqdm(file):
+            if nb_load!=-1 and line_num>nb_load:
+                break
             # print(".", end='')
             # Strip white space from start/end of line and change to lowercase for use below
             line = line.strip().lower()

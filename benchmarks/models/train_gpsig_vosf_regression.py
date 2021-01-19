@@ -17,10 +17,11 @@ import matplotlib.pyplot as plt
 from utils import *
 
 from gpsig.precompute_signatures import SignatureCalculator
+from sklearn.metrics import r2_score
 
 def mean_absolute_percentage_error(y_true,y_pred):
     epsilon = np.finfo(np.float64).eps
-    mape = np.abs(y_pred - y_true) / np.maximum(np.abs(y_true), epsilon)
+    mape = 100*np.abs(y_pred - y_true) / np.maximum(np.abs(y_true), epsilon)
     return np.mean(mape)
 
 def get_signatures(signature_calculator, data):
@@ -141,7 +142,7 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
                 y_nlpp[slice_batch] = m.predict_density(X_batch, y_batch).flatten()
             return y_nlpp
 
-        acc = lambda m, X, y: mean_absolute_percentage_error(y, batch_predict_y(m, X, batch_size=minibatch_size))
+        acc = lambda m, X, y: r2_score(y, batch_predict_y(m, X, batch_size=minibatch_size))
         nlpp = lambda m, X, y: -np.mean(batch_predict_density(m, X, y, batch_size=minibatch_size))
 
         val_acc = lambda m: acc(m, X_val, y_val)
@@ -157,9 +158,9 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
         num_iter_per_epoch = int(np.ceil(float(num_train) / minibatch_size))
         
         ### phase 1 - pre-train variational distribution
-        print_freq = 10 #np.minimum(num_iter_per_epoch, 100)
+        print_freq = 100 #np.minimum(num_iter_per_epoch, 100)
         save_freq = 100 #np.minimum(num_iter_per_epoch, 50)
-        patience = np.maximum(500 * num_iter_per_epoch, 5000)
+        patience = 5000#np.maximum(500 * num_iter_per_epoch, 5000)
         
         m.kern.set_trainable(False)
         hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq,
@@ -185,7 +186,7 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
         val_acc = val_acc(m)
 
         print('Val. nlpp: {:.4f}'.format(val_nlpp))
-        print('Val. mape: {:.4f}'.format(val_acc))
+        print('Val. r2: {:.4f}'.format(val_acc))
             
         ### phase 4 - fix kernel parameters and train on rest of data to assimilate into variational approximation
         m.kern.set_trainable(False)
@@ -203,14 +204,14 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
         test_acc = acc(m, X_test, y_test)
  
         print('Test nlpp: {:.4f}'.format(test_nlpp))
-        print('Test mape: {:.4f}'.format(test_acc))
+        print('Test r2: {:.4f}'.format(test_acc))
 
         ## save results to file
         hist['results'] = {}
-        hist['results']['val_mape'] = val_acc
+        hist['results']['val_r2'] = val_acc
         hist['results']['val_nlpp'] = val_nlpp
         hist['results']['test_nlpp'] = test_nlpp
-        hist['results']['test_mape'] = test_acc
+        hist['results']['test_r2'] = test_acc
 
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
@@ -222,9 +223,9 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
             pickle.dump(hist, f)
         with open(os.path.join(save_dir, experiment_name + '.txt'), 'w') as f:
             f.write('Val. nlpp: {:.4f}\n'.format(val_nlpp))
-            f.write('Val. mape: {:.4f}\n'.format(val_acc))
+            f.write('Val. r2: {:.4f}\n'.format(val_acc))
             f.write('Test nlpp: {:.4f}\n'.format(test_nlpp))
-            f.write('Test mape: {:.4f}\n'.format(test_acc))
+            f.write('Test r2: {:.4f}\n'.format(test_acc))
 
     ## clear memory manually
     gp.reset_default_session()
