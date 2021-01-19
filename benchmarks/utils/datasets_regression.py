@@ -8,6 +8,7 @@ import gpsig
 from utils.load_tsfiles import load_from_tsfile_to_dataframe 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import train_test_split
+from utils.tslearn_scaler import TimeSeriesScalerMeanVariance
 
 def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False, normalize_output=False, add_time=False, max_len=None, val_split=None, return_min_len=False):
     
@@ -55,12 +56,12 @@ def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False,
     num_val = len(X_val)
     num_train = len(X_train)
     
-    if normalize_data:
-        scaler = StandardScaler()
-        scaler.fit(np.concatenate(X_train, axis=0))
-        X_train = [scaler.transform(x) for x in X_train]
-        X_val = [scaler.transform(x) for x in X_val] if X_val is not None else None
-        X_test = [scaler.transform(x) for x in X_test]
+    # if normalize_data:
+        # scaler = StandardScaler()
+        # scaler.fit(np.concatenate(X_train, axis=0))
+        # X_train = [scaler.transform(x) for x in X_train]
+        # X_val = [scaler.transform(x) for x in X_val] if X_val is not None else None
+        # X_test = [scaler.transform(x) for x in X_test]
     
     if normalize_output:
         scaler = StandardScaler()
@@ -94,6 +95,14 @@ def load_dataset_regression(dataset_name, for_model='sig', normalize_data=False,
         X_val = X[num_train:num_train+num_val]
         X_test = X[num_train+num_val:]
     
+
+    if normalize_data: 
+        scaler = TimeSeriesScalerMeanVariance()
+        scaler.fit(X_train)
+        X_train = scaler.transform(X_train)
+        X_val = scaler.transform(X_val)
+        X_test = scaler.transform(X_test)
+
     if return_min_len:
         return X_train, y_train, X_val, y_val, X_test, y_test, len_min
     else:
