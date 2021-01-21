@@ -29,8 +29,8 @@ def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=F
 
         X_train, y_train = load_from_arff_to_dataframe('./datasets/{0}_TRAIN.arff'.format(dataset_name))
         X_test, y_test = load_from_arff_to_dataframe('./datasets/{0}_TEST.arff'.format(dataset_name))
-        X_train = [x for x in X_train.values]
-        X_test = [x for x in X_test.values]
+        X_train = [np.stack(x, axis=1) for x in X_train.values]
+        X_test = [np.stack(x, axis=1) for x in X_test.values]
     
     else:
         data = loadmat(data_path)
