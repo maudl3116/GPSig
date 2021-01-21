@@ -1,6 +1,7 @@
 import sys
 import os
 sys.path.append('../..')
+sys.path.append('../')
 import numpy as np
 import gpsig
 
@@ -23,11 +24,13 @@ def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=F
         data_path_train = './datasets/{}_TRAIN.arff'.format(dataset_name)
         data_path_test = './datasets/{}_TEST.arff'.format(dataset_name)
 
-        X_train, y_train = load_from_arff_to_dataframe('./{0}/{0}_TRAIN.arff'.format(dataset_name))
-        X_test, y_test = load_from_arff_to_dataframe('./{0}/{0}_TEST.arff'.format(dataset_name))
+        if not os.path.exists(data_path_train):
+            raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...') 
 
-        if not os.path.exists(data_path):
-            raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...')      
+        X_train, y_train = load_from_arff_to_dataframe('./datasets/{0}_TRAIN.arff'.format(dataset_name))
+        X_test, y_test = load_from_arff_to_dataframe('./datasets/{0}_TEST.arff'.format(dataset_name))
+        X_train = [x for x in X_train.values]
+        X_test = [x for x in X_test.values]
     
     else:
         data = loadmat(data_path)
