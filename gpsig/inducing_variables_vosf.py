@@ -181,7 +181,7 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
             if kern.normalization:
                 # Kxx is a constant w.r.t  x, but here we need to get back the norms to corrext Kzx (the signatures). 
                 Kxx, Kxx_un = kern.K_norms(X_new[:,:feat.input_dim])
-                Kzx /= tf.repeat(tf.sqrt(Kxx_un[:(feat.sig_level+1)]),repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)[:feat.M,:]
+                Kzx /= tf.repeat(tf.sqrt(Kxx_un[:(feat.sig_level+1)]+settings.jitter),repeats=np.array([feat.d**i for i in range(feat.sig_level+1)]),axis=0)[:feat.M,:]
             else:
                 Kxx = kern.Kdiag(X_new[:,:feat.input_dim],return_levels = False) 
             Kxx += jitter
