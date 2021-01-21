@@ -8,22 +8,34 @@ from scipy.io import loadmat
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import train_test_split
+# from tslearn.datasets import UCR_UEA_datasets
+# from sktime.utils.load_data import load_from_arff_to_dataframe
+from utils.load_arff_files import load_from_arff_to_dataframe 
 
 def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=False, max_len=None, val_split=None, test_split=None, return_min_len=False):
     
     # if test_split is not None it will instead return test_split % of the training data for testing
 
+ 
     data_path = './datasets/{}.mat'.format(dataset_name)
    
     if not os.path.exists(data_path):
-        raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...')
-        
-    data = loadmat(data_path)
+        data_path_train = './datasets/{}_TRAIN.arff'.format(dataset_name)
+        data_path_test = './datasets/{}_TEST.arff'.format(dataset_name)
+
+        X_train, y_train = load_from_arff_to_dataframe('./{0}/{0}_TRAIN.arff'.format(dataset_name))
+        X_test, y_test = load_from_arff_to_dataframe('./{0}/{0}_TEST.arff'.format(dataset_name))
+
+        if not os.path.exists(data_path):
+            raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...')      
     
-    X_train, y_train, X_test, y_test = data['X_train'], data['y_train'], data['X_test'], data['y_test']
-    
-    X_train, y_train, X_test, y_test = np.squeeze(X_train), np.squeeze(y_train), np.squeeze(X_test), np.squeeze(y_test)
-    
+    else:
+        data = loadmat(data_path)
+        X_train, y_train, X_test, y_test = data['X_train'], data['y_train'], data['X_test'], data['y_test']
+        X_train, y_train, X_test, y_test = np.squeeze(X_train), np.squeeze(y_train), np.squeeze(X_test), np.squeeze(y_test)
+        #X_train, y_train, X_test, y_test = UCR_UEA_datasets(use_cache=True).load_dataset(dataset_name)
+
+
     len_min = min(np.min([x.shape[0] for x in X_train]), np.min([x.shape[0] for x in X_test]))
     
     num_train = len(X_train)
