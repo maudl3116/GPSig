@@ -23,7 +23,7 @@ def get_signatures(signature_calculator, data):
     return signature_calculator.compute_signature(data)
 
 def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_levels=5, M=500, normalize_data=True, minibatch_size=50, max_len=500,
-                           num_lags=None, order =0, fast_algo = False, val_split=None, test_split=None, experiment_idx=None, save_dir='./GPSig/'):
+                           num_lags=None, order =0, fast_algo = False, normalized_kernel=False, val_split=None, test_split=None, experiment_idx=None, save_dir='./GPSig/'):
     
     """
         # Inputs:
@@ -96,14 +96,14 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
         if inf:
             feat = gpsig.inducing_variables_vosf.UntruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig) 
         else:
-            feat = gpsig.inducing_variables_vosf.TruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M)
+            feat = gpsig.inducing_variables_vosf.TruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig)
 
         ## define kernel
         #k = gpsig.kernels.SignatureRBF(input_dim, num_levels=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, low_rank=low_rank)
         if inf:
             k = gpsig.kernels_pde.UntruncSignatureKernel(input_dim, num_features, order=order, lengthscales=l_init, num_lags=num_lags)
         else:
-            k = gpsig.kernels.SignatureLinear(input_dim, num_features=num_features, num_levels=num_levels, order=num_levels, lengthscales=l_init,normalization=False, difference=True)
+            k = gpsig.kernels.SignatureLinear(input_dim, num_features=num_features, num_levels=num_levels, order=num_levels, lengthscales=l_init,normalization=normalized_kernel, difference=True, num_lags=num_lags)
         
         if num_classes == 2:
             lik = gp.likelihoods.Bernoulli()
