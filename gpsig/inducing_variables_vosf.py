@@ -36,7 +36,7 @@ class UntruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
     # :M:             the number of inducing variables
     """
 
-    def __init__(self, input_dim, d, M,compute_sig=False,num_lags=0,**kwargs):
+    def __init__(self, input_dim, d, M,compute_sig=False,compute_and_diff_sig=False, num_lags=0,**kwargs):
        
         super().__init__(**kwargs)
         self.input_dim = input_dim
@@ -45,6 +45,7 @@ class UntruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
     
         self.M = M
         self.compute_sig = compute_sig
+        self.compute_and_diff_sig = compute_and_diff_sig
 
         # compute the truncation level the "closest to M"
         self.sig_level = compute_trunc(M,(num_lags+1)*d)
@@ -69,7 +70,7 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
         # Computing Kzx 
         if fast: # this method is in development. It avoids the computation of signatures.
             Kzx = None 
-        elif feat.compute_sig:
+        elif feat.compute_sig or feat.compute_and_diff_sig:
             Kzx = Kuf(feat,kern,X_new)
         else:
             Kzx = Kuf(feat,kern,X_new[:,feat.input_dim:]) # S(\theta x) using iisignature compatible with tensorflow even if we do not use its autodiff
@@ -97,20 +98,26 @@ def Kuf(feat, kern, X_new):
     with params_as_tensors_for(feat,kern):
         
         num_examples = tf.shape(X_new)[0]
-
-        if feat.compute_sig:
+            
+        if feat.compute_and_diff_sig:
             # X, _ = kern._slice(X_new, None)
             X = tf.reshape(X_new, (num_examples, -1, feat.d))
             X = kern._apply_scaling_and_lags_to_sequences(X)
             S_tf = Sig(X,feat.sig_level)
             S_tf = S_tf[:,:(feat.M-1)]  # (N,M)
-        else:
-            S_tf = X_new 
+        else: 
             indices = get_powers(feat.d,feat.sig_level)[:(feat.M-1),:] # this way we do not need to differentiate the signature wrt its input
             levels = tf.repeat(kern.lengthscales[None,:],repeats=tf.shape(indices)[0],axis=0)
             powers_levels = tf.pow(levels,indices)
             powers = tf.math.reduce_prod(powers_levels,axis=1)
+            if feat.compute_sig:
+                X = tf.reshape(X_new, (num_examples, -1, feat.d))
+                S_tf = Sig(X,feat.sig_level)
+                S_tf = S_tf[:,:(feat.M-1)]
+            else:
+                S_tf = X_new 
             S_tf/=powers[None,:]
+
         ones = tf.ones([num_examples,1],dtype=settings.dtypes.float_type)
         full_S = tf.concat([ones,S_tf],axis=1)
         full_S *= tf.sqrt(kern.sigma)
@@ -136,7 +143,7 @@ class TruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
     # :M:             the number of inducing variables
     """
 
-    def __init__(self, input_dim, d, M,compute_sig=False,num_lags=0, **kwargs):
+    def __init__(self, input_dim, d, M,compute_sig=False,compute_and_diff_sig=False, num_lags=0, **kwargs):
        
         super().__init__(**kwargs)
         self.input_dim = input_dim
@@ -144,6 +151,7 @@ class TruncInducingOrthogonalTensors(SignatureOrthogonalInducing):
         self.M = M
         self.num_lags = num_lags
         self.compute_sig = compute_sig
+        self.compute_and_diff_sig = compute_and_diff_sig 
 
         # compute the truncation level the "closest to M"
         self.sig_level = compute_trunc(M,(num_lags+1)*d)
@@ -168,7 +176,7 @@ def Kuu_Kuf_Kff(feat, kern, X_new, *, jitter=0.0, full_f_cov=False, fast=False):
         # Computing Kzx
         if fast: # in development
             Kzx = None
-        elif feat.compute_sig:
+        elif feat.compute_sig or feat.compute_and_diff_sig:
             Kzx = Kuf(feat,kern,X_new)
         else:
             Kzx = Kuf(feat,kern,X_new[:,feat.input_dim:]) 
@@ -198,18 +206,23 @@ def Kuf(feat, kern, X_new):
     with params_as_tensors_for(feat,kern):
         num_examples = tf.shape(X_new)[0]
 
-        if feat.compute_sig: # compute Kuf with iisignature 
+        if feat.compute_and_diff_sig: # compute Kuf with iisignature 
             # X, _ = kern._slice(X_new, None)
             X = tf.reshape(X_new, (num_examples, -1, feat.d))
             X = kern._apply_scaling_and_lags_to_sequences(X)
             S_tf = Sig(X,feat.sig_level)
             S_tf = S_tf[:,:(feat.M-1)]  # (N,M)
         else:
-            S_tf = X_new
             indices = get_powers(feat.d,feat.sig_level)[:(feat.M-1),:]
             levels = tf.repeat(kern.lengthscales[None,:],repeats=tf.shape(indices)[0],axis=0)
             powers_levels = tf.pow(levels,indices)
             powers = tf.math.reduce_prod(powers_levels,axis=1)
+            if feat.compute_sig:
+                X = tf.reshape(X_new, (num_examples, -1, feat.d))
+                S_tf = Sig(X,feat.sig_level)
+                S_tf = S_tf[:,:(feat.M-1)]  # (N,M)
+            else:
+                S_tf = X_new
             S_tf/=powers[None,:]
 
         ones = tf.ones([num_examples,1],dtype=settings.dtypes.float_type)

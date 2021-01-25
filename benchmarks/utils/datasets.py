@@ -4,7 +4,7 @@ sys.path.append('../..')
 sys.path.append('../')
 import numpy as np
 import gpsig
-
+import pandas as pd
 from scipy.io import loadmat
 
 from sklearn.preprocessing import StandardScaler, RobustScaler
@@ -13,30 +13,59 @@ from sklearn.model_selection import train_test_split
 # from sktime.utils.load_data import load_from_arff_to_dataframe
 from utils.load_arff_files import load_from_arff_to_dataframe 
 
+
+# for the whale dataset
+from scipy import signal
+import copy
+import math
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.utils import as_float_array
+from utils.tslearn_scaler import TimeSeriesScalerMeanVariance
+
 def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=False, max_len=None, val_split=None, test_split=None, return_min_len=False):
     
     # if test_split is not None it will instead return test_split % of the training data for testing
 
- 
-    data_path = './datasets/{}.mat'.format(dataset_name)
-   
-    if not os.path.exists(data_path):
-        data_path_train = './datasets/{}_TRAIN.arff'.format(dataset_name)
-        data_path_test = './datasets/{}_TEST.arff'.format(dataset_name)
-
-        if not os.path.exists(data_path_train):
-            raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...') 
-
-        X_train, y_train = load_from_arff_to_dataframe('./datasets/{0}_TRAIN.arff'.format(dataset_name))
-        X_test, y_test = load_from_arff_to_dataframe('./datasets/{0}_TEST.arff'.format(dataset_name))
-        X_train = [np.stack(x, axis=1) for x in X_train.values]
-        X_test = [np.stack(x, axis=1) for x in X_test.values]
+    if dataset_name=='Crops':
+        data = pd.read_csv('./datasets/crops.csv',skiprows=1,header=None,encoding= 'unicode_escape')
+        data = data.dropna()
+        data = data[data[0]!='PK\x07\x08\x88<mßzW±\x01']
+        data = data.values
+  
+        y, X = data[:,0].astype(int), data[:,1:][:,:,None]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=True, stratify=y,random_state=0)
     
     else:
-        data = loadmat(data_path)
-        X_train, y_train, X_test, y_test = data['X_train'], data['y_train'], data['X_test'], data['y_test']
-        X_train, y_train, X_test, y_test = np.squeeze(X_train), np.squeeze(y_train), np.squeeze(X_test), np.squeeze(y_test)
-        #X_train, y_train, X_test, y_test = UCR_UEA_datasets(use_cache=True).load_dataset(dataset_name)
+        data_path = './datasets/{}.mat'.format(dataset_name)
+   
+        if not os.path.exists(data_path):
+            data_path_train = './datasets/{0}/{0}_TRAIN.arff'.format(dataset_name)
+            data_path_test = './datasets/{0}/{0}_TEST.arff'.format(dataset_name)
+
+            if not os.path.exists(data_path_train):
+                raise ValueError('Please download the attached datasets and extract to the /benchmarks/datasets/ directory...') 
+
+            X_train, y_train = load_from_arff_to_dataframe('./datasets/{0}/{0}_TRAIN.arff'.format(dataset_name))
+            X_test, y_test = load_from_arff_to_dataframe('./datasets/{0}/{0}_TEST.arff'.format(dataset_name))
+            X_train = [np.stack(x, axis=1) for x in X_train.values]
+            X_test = [np.stack(x, axis=1) for x in X_test.values]
+
+            if dataset_name == 'RightWhaleCalls':
+                X_train = np.array(spectrogram().fit_transform(X_train))
+                X_test = np.array(spectrogram().fit_transform(X_test)) 
+                labels_dict = {c : i for i, c in enumerate(np.unique(y_train))}
+                y_train = np.asarray([labels_dict[c] for c in y_train])
+                y_test = np.asarray([labels_dict[c] for c in y_test])
+                
+                scaler = TimeSeriesScalerMeanVariance()
+                scaler.fit(X_train)
+                X_train = scaler.transform(X_train)
+                X_test = scaler.transform(X_test)
+        else:
+            data = loadmat(data_path)
+            X_train, y_train, X_test, y_test = data['X_train'], data['y_train'], data['X_test'], data['y_test']
+            X_train, y_train, X_test, y_test = np.squeeze(X_train), np.squeeze(y_train), np.squeeze(X_test), np.squeeze(y_test)
+            #X_train, y_train, X_test, y_test = UCR_UEA_datasets(use_cache=True).load_dataset(dataset_name)
 
 
     len_min = min(np.min([x.shape[0] for x in X_train]), np.min([x.shape[0] for x in X_test]))
@@ -144,3 +173,21 @@ def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=F
         return X_train, y_train, X_val, y_val, X_test, y_test, len_min
     else:
         return X_train, y_train, X_val, y_val, X_test, y_test
+
+
+# for the Whale dataset
+class spectrogram(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform_instance(self, X):
+        frequencies, times, spectrogram = signal.spectrogram(X,fs=4000,nfft=256,noverlap=128)
+        # spectrogram = scipy.ndimage.filters.gaussian_filter(spectrogram, [1.1,1.1], mode='constant')
+        return np.log(spectrogram).T[:,2:30]
+        
+
+    def transform(self, X, y=None):
+        return [self.transform_instance(x[:,0]) for x in X]

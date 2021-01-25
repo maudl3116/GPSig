@@ -22,7 +22,7 @@ from gpsig.precompute_signatures import SignatureCalculator
 def get_signatures(signature_calculator, data):
     return signature_calculator.compute_signature(data)
 
-def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_levels=5, M=500, normalize_data=True, minibatch_size=50, max_len=500,
+def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=False, compute_and_diff_sig=False, compute_sig = False, num_levels=5, M=500, normalize_data=True, minibatch_size=50, max_len=500,
                            num_lags=None, order =0, fast_algo = False, normalized_kernel=False, val_split=None, test_split=None, experiment_idx=None, save_dir='./GPSig/'):
     
     """
@@ -37,16 +37,12 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
     print('####################################')
     print('Training dataset: {}'.format(dataset))
     print('####################################')
-    if sig_precompute:
-        compute_sig=False
-    else:
-        compute_sig=True
-        
+
     if fast_algo:
-        assert sig_precompute==False, "no need to precompute signatures if using the fast algorithm"
+        assert sig_precompute==False and compute_and_diff_sig==False and compute_sig==False
         qdiag = True
     else:
-        # assert sig_precompute==True, "should precompute the signatures"
+        assert sig_precompute or compute_and_diff_sig or compute_sig, "should chose how to compute the signatures"
         qdiag = False
     
     ## load data
@@ -94,9 +90,9 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
         
         ## setup model
         if inf:
-            feat = gpsig.inducing_variables_vosf.UntruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig) 
+            feat = gpsig.inducing_variables_vosf.UntruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig, compute_and_diff_sig=compute_and_diff_sig) 
         else:
-            feat = gpsig.inducing_variables_vosf.TruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig)
+            feat = gpsig.inducing_variables_vosf.TruncInducingOrthogonalTensors(input_dim=input_dim, d = num_features, M = M, num_lags=num_lags, compute_sig=compute_sig, compute_and_diff_sig=compute_and_diff_sig) 
 
         ## define kernel
         #k = gpsig.kernels.SignatureRBF(input_dim, num_levels=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, low_rank=low_rank)
@@ -160,9 +156,9 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
         num_iter_per_epoch = int(np.ceil(float(num_train) / minibatch_size))
         
         ### phase 1 - pre-train variational distribution
-        print_freq = 10 #np.minimum(num_iter_per_epoch, 100)
-        save_freq = 100 #np.minimum(num_iter_per_epoch, 50)
-        patience = np.maximum(500 * num_iter_per_epoch, 5000)
+        print_freq = np.minimum(num_iter_per_epoch, 100)
+        save_freq = np.minimum(num_iter_per_epoch, 100)
+        patience = np.maximum(50 * num_iter_per_epoch, 5000)
         
         m.kern.set_trainable(False)
         hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq,
@@ -171,7 +167,7 @@ def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=True, num_le
         ### phase 2 - train kernel (with sigma_i=sigma_j fixed) with early stopping
         m.kern.set_trainable(True)
         # m.kern.variances.set_trainable(False)
-        hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
+        hist = gpsig.training.optimize(m, opt(1e-3), max_iter=10*patience, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
                                        val_scorer=val_scorers, save_best_params=X_val is not None, lower_is_better=True, patience=patience)
         ### restore best parameters
         if 'best' in hist and 'params' in hist['best']: m.assign(hist['best']['params'])
