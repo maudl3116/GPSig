@@ -98,7 +98,7 @@ class SVGP(models.SVGP):
         # scaling for batch size
         scale = tf.cast(self.num_data, settings.float_type) / tf.cast(num_samples, settings.float_type)
 
-        return tf.reduce_sum(var_exp) * scale - KL
+        return tf.reduce_sum(var_exp) * scale - KL - tf.reduce_sum(tf.abs(self.q_mu))
 
 
     @params_as_tensors
@@ -161,17 +161,29 @@ class SVGP(models.SVGP):
         constant = - tf.cast(self.q_mu.shape[1]*self.feature.M, dtype=settings.float_type)
                 
         # trace: tr(Sq) 
-        trace = tf.reduce_sum( self.kern.norms_tens(self.q_sqrt) ) 
+        # trace = tf.reduce_sum( self.kern.norms_tens(self.q_sqrt) ) 
+        trace = tf.reduce_sum( self.kern.norms_tens(self.q_sqrt, embedding=False) )
         if not self.q_diag:
             trace += tf.reduce_sum( self.kern.norms_tens(self.beta) ) 
 
         # log-determinant: log(det Sq)
         logdet_qcov = tf.reduce_sum( self.kern.logs_tens(self.q_sqrt**2) )
+
+
+        # # lin embedding
+        # if not self.q_diag:
+        #     # compute beta^T diag(Sq^-1) beta
+        #     tmp = (1./(self.q_sqrt))*self.beta 
+        #     tmp = self.kern.norms_tens(tmp)
+        #     logdet_qcov += tf.reduce_sum( tf.log(1.+tmp) ) 
+
+        # log-determinant: log(det Sq)
+        logdet_qcov = tf.reduce_sum( self.kern.logs_tens(self.q_sqrt**2) )
         if not self.q_diag:
             # compute beta^T diag(Sq^-1) beta
-            tmp = (1./(self.q_sqrt))*self.beta 
-            tmp = self.kern.norms_tens(tmp)
+            tmp = self.kern.Mahalanobis_tens(1./(self.q_sqrt**2), self.beta)  
             logdet_qcov += tf.reduce_sum( tf.log(1.+tmp) ) 
+
 
         twoKL = mahalanobis + constant - logdet_qcov + trace
 

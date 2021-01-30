@@ -53,6 +53,7 @@ class UntruncSignatureKernel(Kernel):
         super().__init__(input_dim, name=name)
         self.num_features = num_features
         self.len_examples = self._validate_number_of_features(input_dim, num_features)
+        
 
         # assert num_lags is None, "VOSF does not handle lags yet"
         assert implementation in ['cython', 'gpu_op'], "implementation should be 'cython' or 'gpu_op'"
@@ -182,7 +183,8 @@ class UntruncSignatureKernel(Kernel):
         if self.implementation == 'cython':
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
-            E = tf.matmul(X,X,transpose_b=True) 
+            # E = tf.matmul(X,X,transpose_b=True) 
+            E = self._base_kern(X)
             E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
             if self.order>0:
                 E = tf.repeat(tf.repeat(E, repeats=2**self.order, axis=1)/tf.cast(2**self.order, settings.float_type), repeats=2**self.order, axis=2)/tf.cast(2**self.order, settings.float_type)
@@ -207,18 +209,47 @@ class UntruncSignatureKernel(Kernel):
         num_examples, len_examples = tf.shape(X)[-3], tf.shape(X)[-2]
     
         Z = tf.concat([Z, tf.ones_like(Z)],axis=1)  
-        ZX = Z[:,:,None,None,:]*X[None,None,:,:,:]
+        
+        ## linear embedding
+        # ZX = Z[:,:,None,None,:]*X[None,None,:,:,:]
+        # ZX = tf.transpose(ZX,perm=[2,0,1,3,4]) #(num_examples, len_tensors, 2*num_tensors, len_examples,num_features)
+        # ZX = tf.reshape(ZX,[num_examples, len_tensors*2*num_tensors*len_examples, num_features])
+        # M = tf.matmul(X,ZX,transpose_b=True) 
+        # M = tf.reshape(M, (num_examples, len_examples, len_tensors, 2*num_tensors,len_examples))
 
-        ZX = tf.transpose(ZX,perm=[2,0,1,3,4]) #(num_examples, len_tensors, 2*num_tensors, len_examples,num_features)
-        ZX = tf.reshape(ZX,[num_examples, len_tensors*2*num_tensors*len_examples, num_features])
-        M = tf.matmul(X,ZX,transpose_b=True) 
-        M = tf.reshape(M, (num_examples, len_examples, len_tensors, 2*num_tensors,len_examples))
+        ## rbf embedding
+        X = tf.transpose(X,perm=[0,2,1])
+        M = self._base_kern(tf.reshape(X,[-1,len_examples,1]))  # (num_examples*d, len_examples, len_examples)
+        M = tf.reshape(M,[num_examples, num_features,len_examples,len_examples])  # M[i,d,p,q] = <[x^i_p]_d,[x^j_p]_d>
+        M = tf.transpose(M,perm=[0,3,2,1])  # M[i,p,q,d] = <[x^i_p]_d,[x^j_p]_d>
+        M = M[:,:,None,None,:,:]*Z[None,None,:,:,None,:] 
+        M = tf.reduce_sum(M,axis=-1)
 
         K_lvls_diag = signature_algs_vosf.signature_kern_rescaled_higher_order(M, self.num_levels)
         
         return K_lvls_diag
 
-    def _norms_tens(self, Z):
+    def _Mahalanobis_tens(self, Z, beta):
+        """
+        # Input
+        :beta:          (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
+        # Output
+        :K:             (num_levels+1, num_tensors) 
+        """
+        
+        len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
+
+        M = self._base_kern(tf.reshape(beta,[-1,1,1]))  # (len_tensors*num_tensors*num_features, 1, 1)
+        M = tf.reshape(M,[len_tensors, num_tensors, num_features])  
+        M = M*Z
+        M = tf.reduce_sum(M,axis=-1)  #[len_tensors, num_tensors]
+
+        K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
+        
+        return K_lvls_diag
+
+    def _norms_tens(self, Z, embedding=True):
         """
         # Input
         :Z:             (num_levels*(num_levels+1)/2, num_tensors, num_features) tensor of inducing tensors
@@ -227,7 +258,16 @@ class UntruncSignatureKernel(Kernel):
         """
         
         len_tensors, num_tensors, num_features = tf.shape(Z)[0], tf.shape(Z)[1], tf.shape(Z)[-1]
-        M = tf.reduce_sum(tf.square(Z),axis=2)
+        
+        ## lin embedding
+        # M = tf.reduce_sum(tf.square(Z),axis=2)
+        
+        ## rbf embedding
+        if embedding:
+            M = tf.reshape( self._base_kern(tf.reshape(Z,[-1,1,num_features])), [len_tensors,num_tensors])
+        else:
+            M = tf.reduce_sum(tf.square(Z),axis=2)   
+        
         K_lvls_diag = signature_algs_vosf.tensor_inner_product(M, self.num_levels)
         
         return K_lvls_diag
@@ -262,9 +302,14 @@ class UntruncSignatureKernel(Kernel):
         X = tf.reshape(X, [num_examples * len_examples, num_features])
  
         Z = tf.reshape(Z, [num_tensors * len_tensors, num_features])
-        M = tf.matmul(Z,X,transpose_b=True)
-        M = tf.reshape(M, (len_tensors, num_tensors, num_examples, len_examples))
 
+        ## no embedding
+        # M = tf.matmul(Z,X,transpose_b=True)
+        # M = tf.reshape(M, (len_tensors, num_tensors, num_examples, len_examples))
+        
+        ## rbf embedding
+        M = tf.reshape(self._base_kern(Z, X), (len_tensors, num_tensors, num_examples, len_examples))
+        
         K_lvls = signature_algs.signature_kern_tens_vs_seq_higher_order(M, self.num_levels, order=self.num_levels, difference=True)
         
         return K_lvls
@@ -291,14 +336,27 @@ class UntruncSignatureKernel(Kernel):
         
         return tf.reduce_sum(K_lvls_diag, axis=0) + 1. - Z[0,:,0][None,:]
 
+    @params_as_tensors
+    def Mahalanobis_tens(self, Z, beta):
+        """
+        Computes diag( S(X)^T(I-\Lambda_r)S(X)^T )  for different matrices \Lambda_r which are represented as rank-1 tensors.
+        -> to rename
+        """
+
+        K_lvls_diag = self._Mahalanobis_tens(Z[1:],beta[1:])
+          
+        return tf.reduce_sum(K_lvls_diag, axis=0) - 1. + (Z[0,:,0]*beta[0,:,0]**2)[None,:]
+
+
+
     @params_as_tensors 
-    def norms_tens(self, Z):
+    def norms_tens(self, Z, embedding=True):
         """
         Computes the vector of k_phi(z^i,z^i) for z^i in Z
         """
         constant_term = Z[0,:,0]
 
-        K_lvls = self._norms_tens(Z[1:]) 
+        K_lvls = self._norms_tens(Z[1:],embedding=embedding) 
         
         return tf.reduce_sum(K_lvls, axis=0) -1. + constant_term**2
 
@@ -335,6 +393,60 @@ class UntruncSignatureKernel(Kernel):
         Kzx_lvls *= tf.sqrt(self.sigma) 
 
         return tf.reduce_sum(Kzx_lvls, axis=0) + tf.sqrt(self.sigma) *(Z[0,:,0][:,None]-1.)
+
+    ##### Helper functions for base kernels
+
+    def _square_dist(self, X, X2=None):
+        batch = tf.shape(X)[:-2]
+        Xs = tf.reduce_sum(tf.square(X), axis=-1)
+        if X2 is None:
+            dist = -2 * tf.matmul(X, X, transpose_b=True)
+            dist += tf.reshape(Xs, tf.concat((batch, [-1, 1]), axis=0))  + tf.reshape(Xs, tf.concat((batch, [1, -1]), axis=0))
+            return dist
+
+        X2s = tf.reduce_sum(tf.square(X2), axis=-1)
+        dist = -2 * tf.matmul(X, X2, transpose_b=True)
+        dist += tf.reshape(Xs, tf.concat((batch, [-1, 1]), axis=0)) + tf.reshape(X2s, tf.concat((batch, [1, -1]), axis=0))
+        return dist
+
+class SignatureRBF(UntruncSignatureKernel):
+    """
+    The signature kernel, which uses an (infinite number of) monomials of vectors - i.e. Gauss/RBF/SquaredExponential kernel - as state-space embedding
+    """
+    def __init__(self, input_dim, num_features, order, num_levels, **kwargs):
+        UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
+        self._base_kern = self._rbf
+        self.num_levels = num_levels
+
+    # __init__.__doc__ = UntruncSignatureKernel.__init__.__doc__
+
+    def _rbf(self, X, X2=None):
+        K = tf.exp(-self._square_dist(X, X2) / 2)
+        return K 
+
+
+class SignatureLinear(UntruncSignatureKernel):
+    """
+    The signature kernel, which uses the identity as state-space embedding 
+    """
+
+    def __init__(self, input_dim, num_features, order, num_levels, **kwargs):
+        UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
+        # self.gamma = Parameter(1.0/float(self.num_features), transform=transforms.positive, dtype=settings.float_type)
+        # self.offsets = Parameter(np.zeros(self.num_features), dtype=settings.float_type)
+        self._base_kern = self._lin
+        self.num_levels = num_levels
+    
+    # __init__.__doc__ = UntruncSignatureKernel.__init__.__doc__
+
+    def _lin(self, X, X2=None):
+        if X2 is None:
+            # K = self.gamma * tf.matmul(X, X, transpose_b = True)
+            K = tf.matmul(X, X, transpose_b = True)
+            return  K
+        else:
+            # return self.gamma * tf.matmul(X, X2, transpose_b = True)
+            return tf.matmul(X, X2, transpose_b = True)
 
 
 ''' Functions for the Cython covariance operator ''' 
