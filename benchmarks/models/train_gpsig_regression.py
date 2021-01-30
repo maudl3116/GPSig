@@ -23,7 +23,7 @@ def mean_absolute_percentage_error(y_true,y_pred):
     return np.mean(mape)
 
 def train_gpsig_regressor(dataset, num_levels=4, num_inducing=500, normalize_data=True, normalize_output=True, minibatch_size=50, max_len=400, increments=True, learn_weights=False,
-                           num_lags=None, low_rank=False, val_split=None, experiment_idx=None, use_tensors=True, save_dir='./GPSig/'):
+    signature_kernel='linear',num_lags=None, low_rank=False, val_split=None, experiment_idx=None, use_tensors=True, save_dir='./GPSig/', train_spec):
     
     print('####################################')
     print('Training dataset: {}'.format(dataset))
@@ -55,11 +55,17 @@ def train_gpsig_regressor(dataset, num_levels=4, num_inducing=500, normalize_dat
         
         ## setup model
         if use_tensors:
-            feat = gpsig.inducing_variables.InducingTensors(Z_init, num_levels=num_levels, increments=increments, learn_weights=learn_weights)
+            if dataset=='Crops':
+                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, labels=y_train, increments=increments, num_lags=num_lags)
+            else:
+                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, increments=increments, num_lags=num_lags)        
         else:
-            feat = gpsig.inducing_variables.InducingSequences(Z_init, num_levels=num_levels, learn_weights=learn_weights)
+            Z_init = suggest_initial_inducing_sequences(X_train, num_inducing, num_levels+1, labels=y_train)
             
-        k = gpsig.kernels.SignatureRBF(input_dim, num_levels=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, low_rank=low_rank)
+        if signature_kernel == 'linear':
+            k = gpsig.kernels.SignatureLinear(input_dim, num_levels=num_levels,  order=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, normalization=False)
+        else:
+            k = gpsig.kernels.SignatureRBF(input_dim, num_levels=num_levels, num_features=num_features, lengthscales=l_init, num_lags=num_lags, low_rank=low_rank)
         
         lik = gp.likelihoods.Gaussian()
         num_latent = 1
@@ -104,9 +110,14 @@ def train_gpsig_regressor(dataset, num_levels=4, num_inducing=500, normalize_dat
         num_iter_per_epoch = int(np.ceil(float(num_train) / minibatch_size))
         
         ### phase 1 - pre-train variational distribution
-        print_freq = np.minimum(num_iter_per_epoch, 5)
-        save_freq = np.minimum(num_iter_per_epoch, 50)
-        patience = np.maximum(500 * num_iter_per_epoch, 5000)
+        if train_spec is None:
+            print_freq = np.minimum(num_iter_per_epoch, 5)
+            save_freq = np.minimum(num_iter_per_epoch, 50)
+            patience = np.maximum(500 * num_iter_per_epoch, 5000)
+        else:
+            print_freq = train_spec['print_freq'] 
+            save_freq = train_spec['save_freq'] 
+            patience = train_spec['patience'] 
         
         m.kern.set_trainable(False)
         hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq,
@@ -115,17 +126,24 @@ def train_gpsig_regressor(dataset, num_levels=4, num_inducing=500, normalize_dat
         ### phase 2 - train kernel (with sigma_i=sigma_j fixed) with early stopping
         m.kern.set_trainable(True)
         m.kern.variances.set_trainable(False)
-        hist = gpsig.training.optimize(m, opt(1e-3), max_iter=5000*num_iter_per_epoch, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
+
+        if signature_kernel=='linear':
+            hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
                                        val_scorer=val_scorers, save_best_params=X_val is not None, lower_is_better=True, patience=patience)
+        else:
+            hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience//2, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
+                                       val_scorer=val_scorers, save_best_params=X_val is not None, lower_is_better=True, patience=patience)
+        
         ### restore best parameters
         if 'best' in hist and 'params' in hist['best']: m.assign(hist['best']['params'])
                 
         ### phase 3 - train with all kernel hyperparameters unfixed
-        m.kern.variances.set_trainable(True)
-        hist = gpsig.training.optimize(m, opt(1e-3), max_iter=5000*num_iter_per_epoch, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
+        if not signature_kernel=='linear':
+            m.kern.variances.set_trainable(True)
+            hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience//2, print_freq=print_freq, save_freq=save_freq, history=hist, # global_step=global_step,
                                       val_scorer=val_scorers, save_best_params=X_val is not None, lower_is_better=True, patience=patience)
-        ### restore best parameters
-        if 'best' in hist and 'params' in hist['best']: m.assign(hist['best']['params'])
+            ### restore best parameters
+            if 'best' in hist and 'params' in hist['best']: m.assign(hist['best']['params'])
         
         ### evaluate on validation data
         val_nlpp = val_nlpp(m)
@@ -163,6 +181,7 @@ def train_gpsig_regressor(dataset, num_levels=4, num_inducing=500, normalize_dat
 
         experiment_name = '{}'.format(dataset)
         if experiment_idx is not None:
+            experiment_name += '_{}'.format(num_inducing)
             experiment_name += '_{}'.format(experiment_idx)
         with open(os.path.join(save_dir, experiment_name + '.pkl'), 'wb') as f:
             pickle.dump(hist, f)

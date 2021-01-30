@@ -28,7 +28,7 @@ def get_signatures(signature_calculator, data):
     return signature_calculator.compute_signature(data)
 
 def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_levels=5, M=500, normalize_data=False, normalize_output=True, minibatch_size=50, max_len=500,
-                           num_lags=None, order =0, fast_algo = False, val_split=None, experiment_idx=None, save_dir='./GPSig/'):
+                           num_lags=None, order =0, fast_algo = False, val_split=None, experiment_idx=None, save_dir='./GPSig/',train_spec=None):
     
     """
         # Inputs:
@@ -158,14 +158,20 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
         num_iter_per_epoch = int(np.ceil(float(num_train) / minibatch_size))
         
         ### phase 1 - pre-train variational distribution
-        print_freq = 100 #np.minimum(num_iter_per_epoch, 100)
-        save_freq = 100 #np.minimum(num_iter_per_epoch, 50)
-        patience = 5000#np.maximum(500 * num_iter_per_epoch, 5000)
-        
+        if train_spec is None:
+            print_freq = np.minimum(num_iter_per_epoch, 5)
+            save_freq = np.minimum(num_iter_per_epoch, 50)
+            patience = np.maximum(500 * num_iter_per_epoch, 5000)
+        else:
+            print_freq = train_spec['print_freq'] 
+            save_freq = train_spec['save_freq'] 
+            patience = train_spec['patience'] 
+
         m.kern.set_trainable(False)
         hist = gpsig.training.optimize(m, opt(1e-3), max_iter=patience, print_freq=print_freq, save_freq=save_freq,
                                        val_scorer=val_scorers, save_best_params=X_val is not None, lower_is_better=True)
         
+        print(acc(m, X_test, y_test))
         ### phase 2 - train kernel (with sigma_i=sigma_j fixed) with early stopping
         m.kern.set_trainable(True)
         # m.kern.variances.set_trainable(False)
@@ -218,6 +224,7 @@ def train_gpsig_vosf_regressor(dataset, inf = True, sig_precompute=True, num_lev
 
         experiment_name = '{}'.format(dataset)
         if experiment_idx is not None:
+            experiment_name += '_{}'.format(M)
             experiment_name += '_{}'.format(experiment_idx)
         with open(os.path.join(save_dir, experiment_name + '.pkl'), 'wb') as f:
             pickle.dump(hist, f)

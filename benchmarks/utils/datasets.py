@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 from utils.load_arff_files import load_from_arff_to_dataframe 
 
 
-# for the whale dataset
+# for datasets that require a Fourier transform as preprocessing
 from scipy import signal
 import copy
 import math
@@ -22,11 +22,13 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import as_float_array
 from utils.tslearn_scaler import TimeSeriesScalerMeanVariance
 
-def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=False, max_len=None, val_split=None, test_split=None, return_min_len=False):
+def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=False, lead_lag=False, max_len=None, val_split=None, test_split=None, return_min_len=False):
     
     # if test_split is not None it will instead return test_split % of the training data for testing
 
     if dataset_name=='Crops':
+        if not os.path.exists('./datasets/crops.csv'):
+            raise ValueError('Please download the crops dataset') 
         data = pd.read_csv('./datasets/crops.csv',skiprows=1,header=None,encoding= 'unicode_escape')
         data = data.dropna()
         data = data[data[0]!='PK\x07\x08\x88<mßzW±\x01']
@@ -34,6 +36,10 @@ def load_dataset(dataset_name, for_model='sig', normalize_data=False, add_time=F
   
         y, X = data[:,0].astype(int), data[:,1:][:,:,None]
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=True, stratify=y,random_state=0)
+
+        if lead_lag:
+            X_train = LeadLag().fit_transform(X_train) 
+            X_test = LeadLag().fit_transform(X_test) 
     
     else:
         data_path = './datasets/{}.mat'.format(dataset_name)
@@ -186,8 +192,34 @@ class spectrogram(BaseEstimator, TransformerMixin):
     def transform_instance(self, X):
         frequencies, times, spectrogram = signal.spectrogram(X,fs=4000,nfft=256,noverlap=128)
         # spectrogram = scipy.ndimage.filters.gaussian_filter(spectrogram, [1.1,1.1], mode='constant')
-        return np.log(spectrogram).T[:,2:30]
+        return spectrogram.T[:,2:30]
         
 
     def transform(self, X, y=None):
         return [self.transform_instance(x[:,0]) for x in X]
+
+class LeadLag(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform_instance(self, X):
+        lag = []
+        lead = []
+
+        for val_lag, val_lead in zip(X[:-1], X[1:]):
+            lag.append(val_lag)
+            lead.append(val_lag)
+
+            lag.append(val_lag)
+            lead.append(val_lead)
+
+        lag.append(X[-1])
+        lead.append(X[-1])
+
+        return np.c_[lag, lead]
+
+    def transform(self, X, y=None):
+        return [self.transform_instance(x) for x in X]
