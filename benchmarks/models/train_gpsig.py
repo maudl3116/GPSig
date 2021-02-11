@@ -17,7 +17,7 @@ from utils import *
 
 from sklearn.metrics import accuracy_score, classification_report
 
-def train_gpsig_classifier_(dataset, num_levels=4, num_inducing=500, normalize_data=True, minibatch_size=50, max_len=400, increments=True, learn_weights=False, signature_kernel='linear',
+def train_gpsig_classifier(dataset, num_levels=4, num_inducing=500, normalize_data=True, minibatch_size=50, max_len=400, increments=True, learn_weights=False, signature_kernel='linear',
                            num_lags=None, low_rank=False, val_split=None, test_split=None, experiment_idx=None, use_tensors=True, save_dir='./GPSig/', train_spec=None):
     
     print('####################################')

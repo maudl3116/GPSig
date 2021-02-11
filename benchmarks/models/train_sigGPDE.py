@@ -22,7 +22,7 @@ from gpsig.precompute_signatures import SignatureCalculator
 def get_signatures(signature_calculator, data):
     return signature_calculator.compute_signature(data)
 
-def train_gpsig_vosf_classifier(dataset, inf = True, sig_precompute=False, compute_and_diff_sig=False, compute_sig = False, num_levels=5, M=500, normalize_data=True, minibatch_size=50, max_len=500,
+def train_sigGPDE_classifier(dataset, inf = True, sig_precompute=False, compute_and_diff_sig=False, compute_sig = False, num_levels=5, M=500, normalize_data=True, minibatch_size=50, max_len=500,
                            num_lags=None, order =0, fast_algo = False, normalized_kernel=False, val_split=None, test_split=None, experiment_idx=None, save_dir='./GPSig/', train_spec=None):
     
     """
