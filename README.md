@@ -9,8 +9,8 @@ The new features in SigGPDE are:
 ## Installing
 Create and activate virtual environment with Python <= 3.7
 ```
-conda create -n env_name python=3.7
-conda activate env_name
+conda create -n sigGPDE_env python=3.7
+conda activate sigGPDE_env
 ```
 Then, install the requirements using pip by
 ```
@@ -27,7 +27,7 @@ Build the custom TensorFlow operator as follows
 cd gpsig/covariance_op
 sh Makefile_gpu.sh
 ```
-You may have to modify the Makefile with your own cuda and tensorflow paths. 
+You may have to modify the Makefile with your own cuda and tensorflow paths.  
 
 ### Building the signature kernel operator (CPU)
 If you do not have a GPU, you need to build the Cython operator by executing
@@ -53,5 +53,5 @@ The notebook `rainfall_forecast.ipynb` shows how SigGPDE can be used to predict 
 The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
 ```
 cd benchmarks
-bash ./datasets/download_data.sh
+sh ./datasets/download_data.sh
 ```
