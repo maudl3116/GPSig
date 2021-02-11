@@ -1,13 +1,17 @@
-DATA_DIR="datasets/"
+#!/bin/bash
 
-wget https://www.dropbox.com/sh/jqy6519ogx0ool3/AADyDdCPTZCj3QQbGXrYNjiua/AllDatasets.zip?dl=1 -O ${DATA_DIR}/AllDatasets.zip
-unzip ${DATA_DIR}/AllDatasets.zip -d ${DATA_DIR}
-rm ${DATA_DIR}/AllDatasets.zip
+dataset="PenDigits"
+mkdir $dataset
+wget https://timeseriesclassification.com/Downloads/${dataset}.zip
+unzip ${dataset}.zip -d $dataset/
+rm ${dataset}.zip
 
+dataset="RightWhaleCalls"
+wget https://timeseriesclassification.com/Downloads/${dataset}.zip
+unzip ${dataset}.zip
+rm ${dataset}.zip
+mv WhaleCalls RightWhaleCalls
 
-dataset="Crop"
-wget https://timeseriesclassification.com/Downloads/${dataset}.zip -O ${DATA_DIR}/${dataset}.zip
-unzip ${DATA_DIR}/${dataset}.zip -d ${DATA_DIR}
-rm ${DATA_DIR}/${dataset}.zip
+wget https://cloudstor.aarnet.edu.au/plus/index.php/s/pRLVtQyNhxDdCoM?path=%2FDataset%2FSITS_2006_NDVI_C%2FSITS1M_fold1
 
-
+mv pRLVtQyNhxDdCoM?path=%2FDataset%2FSITS_2006_NDVI_C%2FSITS1M_fold1 crops.csv
