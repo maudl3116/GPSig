@@ -1,12 +1,11 @@
-# GPSig
-A Gaussian process library for Bayesian learning from sequential data, such as time series, using signature kernels as covariance functions based on GPflow and TensorFlow. This repository contains supplementary code to the paper https://arxiv.org/abs/1906.08215.
+# SigGPDE
+Library for Gaussian process on sequential data using signature kernels as covariance functions, based on GPflow and TensorFlow.
+Extends the GPSig library by:
+- adding a new signature kernel, computed by solving a PDE
+- adding a new sparse variational inference method based on variational orthogonal signature features. 
 ***
 ## Installing
-To get started, you should first clone the repository using git, e.g. with the command
-```
-git clone https://github.com/tgcsaba/GPSig.git
-```
-and then create and activate virtual environment with Python <= 3.7
+Create and activate virtual environment with Python <= 3.7
 ```
 conda create -n env_name python=3.7
 conda activate env_name
@@ -15,8 +14,13 @@ Then, install the requirements using pip by
 ```
 pip install -r requirements.txt
 ```
-If you would like to use a GPU to run computations (which we heavily recommend, if you have one available), you most likely need to install a GPU compatible version of TensorFlow instead.
-Depending on your OS and CUDA compute capability of your GPU, you might be able to acquire a pre-built version of Tensorflow for your system (from pip, conda or other sources). In some cases, you might have to build it on your system yourself (https://www.tensorflow.org/install/source), which is generally recommended so that you end up with a version that is able to make full use of your hardware.
+In order to use a GPU to run computations the following steps are required:
+- Install a GPU compatible version of TensorFlow instead with the command
+```
+conda install -c anaconda tensorflow-gpu=1.15.3
+pip install gpflow==1.5.1
+```
+- 
 ***
 ## Getting started
 To get started, we suggest to first look at the notebook `signature_kernel.ipynb`, which gives a simple worked out example of how to use the signature kernel as a standalone object. In this notebook, we validate the implementation of the signature kernel by comparing our results to an alternative way of computing signature features using the `esig` package.
@@ -32,8 +36,3 @@ cd benchmarks
 bash ./datasets/download_data.sh
 ```
 or manually by copy-pasting the dropbox url containd within the aforementioned script.
-
-## Support
-We encourage the use of this code for applications, and we aim to provide support in as many cases as possible. For further assistance or to tell us about your project, please send an email to
-
-`csaba.toth@maths.ox.ac.uk` or `harald.oberhauser@maths.ox.ac.uk`.
