@@ -179,7 +179,7 @@ class UntruncSignatureKernel(Kernel):
         elif self.implementation == 'gpu_op':
             E = tf.matmul(X,X,transpose_b=True) 
             # E = self._base_kern(X)
-            # E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
+            E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
             if self.order>0:
                 E = tf.repeat(tf.repeat(E, repeats=2**self.order, axis=1)/tf.cast(2**self.order, settings.float_type), repeats=2**self.order, axis=2)/tf.cast(2**self.order, settings.float_type)
             sol = tf.ones([num_examples, (2**self.order)*(tf.shape(X)[1]-1)+2,(2**self.order)*(tf.shape(X)[1]-1)+2],dtype=settings.float_type)
