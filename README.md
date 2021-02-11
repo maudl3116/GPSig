@@ -1,10 +1,10 @@
 # SigGPDE
-Library for Gaussian process on sequential data using signature kernels as covariance functions.
-SigGPDE is built upon [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
+A repository for Gaussian Processes on sequential data using signature kernels as covariance functions.
+SigGPDE is built upon the library [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
 The new features in SigGPDE are:
-- the computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
-- the computation of the gradients of the signature kernels without resorting to automatic differentation
-- a sparse variational inference method based on variational orthogonal signature features (VOSF)
+- computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
+- computation of the gradients of the signature kernels without resorting to automatic differentation
+- sparse variational inference method based on variational orthogonal signature features (VOSF)
 ***
 ## Installing
 Create and activate virtual environment with Python <= 3.7
