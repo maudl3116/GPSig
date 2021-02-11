@@ -1,6 +1,6 @@
 # SigGPDE
 Library for Gaussian process on sequential data using signature kernels as covariance functions.
-`SigGPDE` is built upon [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
+SigGPDE is built upon [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
 The new features in SigGPDE are:
 - the computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
 - the computation of the gradients of the signature kernels without resorting to automatic differentation
@@ -38,11 +38,11 @@ python setup.py build_ext --inplace
 ***
 ## Notebooks
 ### PDE Signature kernel
-The notebook `pde_signature_kernel.ipynb` shows how to use the pde signature kernel. In this notebook, we validate the implementation of the PDE signature kernel and its gradients by comparing our results to the signature kernel trick used in `GPSig`. The notebook can also be used to verify that you have successfully built the signature kernel operators (Cython or Cuda). 
+The notebook `pde_signature_kernel.ipynb` shows how to use the pde signature kernel. In this notebook, we validate the implementation of the PDE signature kernel and its gradients by comparing our results to the signature kernel trick used in GPSig. The notebook can also be used to verify that you have successfully built the signature kernel operators (Cython or Cuda). 
 ### Classification of time series with SigGPDE
-The notebook `classification_example.ipynb` shows how to use `SigGPDE` for time series classification.
+The notebook `classification_example.ipynb` shows how to use SigGPDE for time series classification.
 ### Forecasting rainfall with SigGPDE
-The notebook `rainfall_forecast.ipynb` shows how `SigGPDE` can be used to predict whether it will rain in the next hour using historical climatic data.
+The notebook `rainfall_forecast.ipynb` shows how SigGPDE can be used to predict whether it will rain in the next hour using historical climatic data.
 ***
 
 ## Download datasets
