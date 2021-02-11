@@ -793,7 +793,9 @@ class SignatureKernel(Kernel):
             else:
                 return tf.reduce_sum(Kxx_lvls, axis=0), tf.reduce_sum(Kxx2_lvls, axis=0), tf.reduce_sum(Kx2x2_lvls_diag, axis=0)
 
-    ##### Helper functions for fast algo VOSF
+	####################################################################
+	## Methods for the trick to avoid computing any signature in VOSF ##
+	####################################################################
 
     def _Mahalanobis_term_approx_posterior(self, Z, X):
         """

@@ -1,3 +1,8 @@
+"""
+Algorithms to compute the ELBO with variational orthogonal signature features (VOSF)
+without computing any signatures 
+"""
+
 import numpy as np
 import tensorflow as tf
 

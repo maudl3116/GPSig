@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-
+import sys, os
 from gpflow.params import Parameter
 from gpflow.decors import params_as_tensors, params_as_tensors_for, autoflow
 from gpflow import transforms
@@ -10,10 +10,10 @@ from . import signature_algs_vosf
 from . import signature_algs
 from .sigKer_fast import sig_kern_diag as sig_kern_diag 
 from . import lags
-
 from tensorflow.python.framework import ops
-# need to find a better way to load the module
-import sys, os
+
+# TODO: need to find a better way to load the module
+
 def find(name, path):
     for root, dirs, files in os.walk(path):
         if name in files:
@@ -27,35 +27,25 @@ from covariance_op import _untrunc_cov_grad
 
 class UntruncSignatureKernel(Kernel):
     """
+    Base class for the PDE signature kernel
     """
     def __init__(self, input_dim, num_features, 
-                 order=4, lengthscales=1, num_lags=None, num_levels=None,implementation = 'gpu_op',name=None):
+                 lengthscales=1, order=0, num_lags=None, implementation = 'gpu_op', num_levels=None, name=None):
         """
-        # Inputs:
-        ## Args:
-        :input_dim:         the total size of an input sample to the kernel
-        :num_features:      the state-space dimension of the input sequebces,
-        
-        ## Kwargs:
-        ### Kernel options     
-		:lengthscales:      lengthscales for scaling the coordinates of the input sequences,
-                            if lengthscales is None, no scaling is applied to the paths
-                            if ARD is True, there is one lengthscale for each path dimension, i.e. lengthscales is of size (num_features)
-        :order              corresponds to the level of discretization to solve the PDE to approximate the signature kernel
-        :num_lags:          Nonnegative integer or None, the number of lags added to each sequence. Usually between 0-5.
-        :implementation:    'cython' if we want to compute on the CPU. 'gpu_op' if we want to use a dedicated cuda tensorflow operator. 
-                            The 'cython' option computes the kernel (cython code) and another kernel to be able to compute the gradients.
-        ***** TO DO *****:
-            allow num_lags to be different from None
-        
+        :param input_dim: the total size of an input sample to the kernel
+        :param num_features: the number of channels the input sequebces,
+    
+		:param lengthscales: lengthscales for scaling the channels of the input sequences,
+        :param order: corresponds to the level of discretization to solve the PDE to approximate the signature kernel
+        :param num_lags: nonnegative integer or None, the number of lags added to each sequence. Usually between 0-5.
+        :param implementation: 'cython' if we want to compute on the CPU. 'gpu_op' if we want to use a dedicated cuda tensorflow operator. 
+        :param num_levels: the truncation level of the signatures (related to the number of inducing variables) for the trick that avoids computing any signature
         """
         
         super().__init__(input_dim, name=name)
         self.num_features = num_features
         self.len_examples = self._validate_number_of_features(input_dim, num_features)
         
-
-        # assert num_lags is None, "VOSF does not handle lags yet"
         assert implementation in ['cython', 'gpu_op'], "implementation should be 'cython' or 'gpu_op'"
         self.implementation = implementation
         self.order = order
@@ -183,9 +173,9 @@ class UntruncSignatureKernel(Kernel):
         if self.implementation == 'cython':
             K_diag = Kdiag_python(X,self.order)
         elif self.implementation == 'gpu_op':
-            # E = tf.matmul(X,X,transpose_b=True) 
-            E = self._base_kern(X)
-            E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
+            E = tf.matmul(X,X,transpose_b=True) 
+            # E = self._base_kern(X)
+            # E = E[:, 1:, ..., 1:] + E[:, :-1, ..., :-1] - E[:, :-1, ..., 1:] - E[:, 1:, ..., :-1]
             if self.order>0:
                 E = tf.repeat(tf.repeat(E, repeats=2**self.order, axis=1)/tf.cast(2**self.order, settings.float_type), repeats=2**self.order, axis=2)/tf.cast(2**self.order, settings.float_type)
             sol = tf.ones([num_examples, (2**self.order)*(tf.shape(X)[1]-1)+2,(2**self.order)*(tf.shape(X)[1]-1)+2],dtype=settings.float_type)
@@ -194,7 +184,9 @@ class UntruncSignatureKernel(Kernel):
 
         return self.sigma*K_diag[:,-1,-1]
 
-    ##### Helper functions for fast algo VOSF
+	####################################################################
+	## Methods for the trick to avoid computing any signature in VOSF ##
+	####################################################################
 
     def _Mahalanobis_term_approx_posterior(self, Z, X):
         """
@@ -432,8 +424,6 @@ class SignatureLinear(UntruncSignatureKernel):
 
     def __init__(self, input_dim, num_features, order, num_levels, **kwargs):
         UntruncSignatureKernel.__init__(self, input_dim, num_features, order, **kwargs)
-        # self.gamma = Parameter(1.0/float(self.num_features), transform=transforms.positive, dtype=settings.float_type)
-        # self.offsets = Parameter(np.zeros(self.num_features), dtype=settings.float_type)
         self._base_kern = self._lin
         self.num_levels = num_levels
     
@@ -441,15 +431,15 @@ class SignatureLinear(UntruncSignatureKernel):
 
     def _lin(self, X, X2=None):
         if X2 is None:
-            # K = self.gamma * tf.matmul(X, X, transpose_b = True)
             K = tf.matmul(X, X, transpose_b = True)
             return  K
         else:
-            # return self.gamma * tf.matmul(X, X2, transpose_b = True)
             return tf.matmul(X, X2, transpose_b = True)
 
 
-''' Functions for the Cython covariance operator ''' 
+##############################################################################
+## Methods to enable computation and differentiation of the cython operator ##
+##############################################################################
 
 def Kdiag_python(X,order=0,name=None):
     with ops.name_scope(name, "Kdiag_python", [X]) as name:
@@ -474,12 +464,6 @@ def py_func(func,inp,Tout, stateful=True, name=None, grad=None):
 
 def _KdiagGrad(op, grad_next_op_Kdiag,grad_next_op_Kdiag_grad):
     
-    ''' inputs:
-        - op: is pyfunc
-        - grad_next_op_Kdiag: <-> grad_{K_diag} K_diag[:,-1,-1]
-        - we do not use grad_next_op_Kdiag_grad
-    '''
-
     n = op.inputs[1]
     c = tf.math.pow(2,n)
     cfloat = tf.dtypes.cast(c,settings.float_type)

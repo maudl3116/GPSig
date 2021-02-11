@@ -35,36 +35,43 @@ class SVGP(models.SVGP):
             Y = Minibatch(Y, batch_size=minibatch_size, shuffle=shuffle, seed=0)
 
         models.GPModel.__init__(self, X, Y, kern, likelihood, mean_function, num_latent, **kwargs)
+        
         self.num_data = num_data or X.shape[0]
         self.q_diag, self.whiten = q_diag, whiten
         self.feature = feat
         self.fast_algo = fast_algo 
+        
         if self.fast_algo:
             self._init_variational_parameters(num_inducing, None, None, q_diag)
         else:
             self._init_variational_parameters(num_inducing, q_mu, q_sqrt, q_diag)
 
-        if self.fast_algo:
+        if self.fast_algo: # TODO: trick in development to avoid the signature computation
 
-            # restriction
             assert num_inducing==np.sum([ self.feature.d**k for k in range(self.feature.sig_level+1) ]), "cannot use the fast algorithm if we have a number of inducing features not corresponding to a truncation level"
-            
-            # reparametrizing the variational means q_mu as sparse tensors
-            if q_mu is None:
-                # should not initialize to zero, otherwise the gradients are always zero
-                q_mu = 0.01*np.random.randn(int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)
+            q_mu, q_sqrt, beta = self.init_var_params_fast_algo(q_mu, q_sqrt, beta, num_latent)
             self.q_mu = Parameter(q_mu, dtype=settings.dtypes.float_type)  
-            
-            # reparametrizing the square root of the diagonal variational covariances q_sqrt as sparse tensors
-            if q_sqrt is None:
-                q_sqrt = np.ones((int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)) #  q_srt was of of shape (M,num_latents), is now (N_M(N_M+1)/2,(M-1)*num_latent,d)
             self.q_sqrt = Parameter(q_sqrt, dtype=settings.dtypes.float_type,transform=transforms.positive) 
-
             if not q_diag:
-                # adding sparse tensors beta  such that Sigma = diag(q_var) +  beta beta^T
-                if beta is None:
-                    beta = 0.01*np.random.randn(int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)
-                self.beta = Parameter(beta, dtype=settings.dtypes.float_type)  
+                self.beta = Parameter(beta, dtype=settings.dtypes.float_type) 
+
+    def _init_var_params_fast_algo(self, q_mu, q_sqrt, beta, num_latent):
+        """
+        Reparametrizes the variational parameters as sparse tensors 
+        """
+        # reparametrizing the variational means q_mu as sparse tensors
+        if q_mu is None:
+            q_mu = 0.01*np.random.randn(int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)
+
+        # reparametrizing the square root of the diagonal variational covariances q_sqrt as sparse tensors
+        if q_sqrt is None:
+            q_sqrt = np.ones((int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)) 
+        
+        # adding sparse tensors beta such that Sigma = diag(q_var) +  beta beta^T
+        if beta is None:
+            beta = 0.01*np.random.randn(int(self.feature.sig_level*(self.feature.sig_level+1)/2)+1, num_latent, self.feature.d)
+        
+        return q_mu, q_sqrt, beta
 
     @params_as_tensors
     def _build_likelihood(self):
@@ -76,11 +83,9 @@ class SVGP(models.SVGP):
 
         if isinstance(self.feature, UntruncInducingOrthogonalTensors) or isinstance(self.feature, TruncInducingOrthogonalTensors):
 
-            if self.fast_algo:
-                
+            if self.fast_algo:         
                 f_mean, f_var = self._build_predict_fast(X, full_cov=False, full_output_cov=False, increments=False)
-                KL = self._build_prior_KL_fast()
-       
+                KL = self._build_prior_KL_fast()  
             else:
                 f_mean, f_var = self._build_predict(X, full_cov=False, full_output_cov=False)
                 KL =  gauss_kl(self.q_mu, tf.matrix_band_part(self.q_sqrt, -1, 0))
@@ -125,6 +130,10 @@ class SVGP(models.SVGP):
         else:
             return f_mean, f_var
 
+	##############################################################
+    ## Methods to compute the ELBO without computing signatures ##
+	##############################################################
+
     @params_as_tensors
     def _build_predict_fast(self, X_new, full_cov=False, full_output_cov=False, return_Kzz=False, increments=False):
         
@@ -132,15 +141,13 @@ class SVGP(models.SVGP):
         
         Kzz, _, Kxx = Kuu_Kuf_Kff(self.feature, self.kern, X_new, jitter=settings.jitter, full_f_cov=full_cov, fast=True)
         
-        # here we adapt the gpflow base_conditional function
-
         f_mean = self.kern.inner_product_tens_vs_seq(self.q_mu, X_new) 
         f_mean = tf.transpose(f_mean)
         
         f_var_lambda =  self.kern.Mahalanobis_term_approx_posterior(self.q_sqrt**2, X_new) 
         f_var = Kxx[:,None] - f_var_lambda 
         if not self.q_diag:
-            f_var_beta = self.kern.inner_product_tens_vs_seq(self.beta, X_new)  #(R,num_examples)
+            f_var_beta = self.kern.inner_product_tens_vs_seq(self.beta, X_new)  # [R,N]
             f_var_beta = tf.transpose(f_var_beta**2)
             f_var+= f_var_beta
         
@@ -154,6 +161,7 @@ class SVGP(models.SVGP):
 
     @params_as_tensors
     def _build_prior_KL_fast(self):
+
         # Mahalanobis term: μqᵀμq  
         mahalanobis = tf.reduce_sum( self.kern.norms_tens(self.q_mu)) 
                 
@@ -169,7 +177,6 @@ class SVGP(models.SVGP):
         # log-determinant: log(det Sq)
         logdet_qcov = tf.reduce_sum( self.kern.logs_tens(self.q_sqrt**2) )
 
-
         # # lin embedding
         # if not self.q_diag:
         #     # compute beta^T diag(Sq^-1) beta
@@ -184,14 +191,16 @@ class SVGP(models.SVGP):
             tmp = self.kern.Mahalanobis_tens(1./(self.q_sqrt**2), self.beta)  
             logdet_qcov += tf.reduce_sum( tf.log(1.+tmp) ) 
 
-
         twoKL = mahalanobis + constant - logdet_qcov + trace
 
         return 0.5*twoKL
 
 
-''' TO MOVE '''
-# added this 
+##############################################################################################
+## Methods to compute the posterior mean and variance without using Cholesky decompositions ##
+## TODO: move somewhere else ##
+##############################################################################################
+
 def base_conditional_ortho(
     Kmn: tf.Tensor,
     Kmm: tf.Tensor,
@@ -206,11 +215,11 @@ def base_conditional_ortho(
     Adapts the gpflow method base_conditional, to the case where the Kmm matrix is the identity. The aim is to
     speed up computations, by avoiding computing unnecessary cholesky decompositions
     """
-    Lm = Kmm # no need for cholesky herem changed #tf.linalg.cholesky(Kmm)
+    Lm = Kmm # no need for cholesky here
     return base_conditional_with_lm_ortho(
         Kmn=Kmn, Lm=Lm, Knn=Knn, f=f, full_cov=full_cov, q_sqrt=q_sqrt, white=white
     )
-# added this
+
 def base_conditional_with_lm_ortho(
     Kmn: tf.Tensor,
     Lm: tf.Tensor,
@@ -281,10 +290,6 @@ def base_conditional_with_lm_ortho(
         fvar = Knn - tf.reduce_sum(tf.square(A), -2)  # [..., N]
         cov_shape = tf.concat([leading_dims, [num_func, N]], 0)  # [..., R, N]
         fvar = tf.broadcast_to(tf.expand_dims(fvar, -2), cov_shape)  # [..., R, N]
-
-    # another backsubstitution in the unwhitened case
-    #if not white:
-     #   A = tf.linalg.triangular_solve(tf.linalg.adjoint(Lm), A, lower=False)
 
     # construct the conditional mean
     f_shape = tf.concat([leading_dims, [M, num_func]], 0)  # [..., M, R]

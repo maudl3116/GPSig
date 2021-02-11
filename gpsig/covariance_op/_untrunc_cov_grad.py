@@ -1,4 +1,6 @@
-"""The gradient of the UntruncCov op."""
+"""
+The gradients of the GPU UntruncCov op for the PDE signature kernel 
+"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -10,7 +12,7 @@ from tensorflow.python.ops import sparse_ops
 
 from gpflow import settings
 
-# need to find a better way to load the module
+# TODO: need to find a better way to load the module
 import os
 import tensorflow as tf
 def find(name, path):
@@ -69,7 +71,6 @@ def _untrunc_cov_grad(op, grad):
   K_grad = tf.reduce_sum(K_grad,axis=2)/tf.cast(2**order, settings.float_type)                               
   K_grad =  tf.reduce_sum(tf.reshape(K_grad,(A,M-1,2**order,D)),axis=2)  # (A,M-1,D)
    
-  
   grad_points = -2.*tf.concat([K_grad,tf.zeros((A, 1, D),dtype=tf.float64)],axis=1) + 2.*tf.concat([tf.zeros((A, 1, D),dtype=tf.float64), K_grad], axis=1)
 
   # grad1 is grad_op.outputs[0](loss) and is non-zero only at grad1[:,-2,-2] and not grad1[:,-1,-1]!

@@ -1,3 +1,7 @@
+"""
+Taken from the iisignature package. We change the float type to float64.
+"""
+
 import iisignature
 import tensorflow as tf
 import numpy as np
