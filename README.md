@@ -1,7 +1,9 @@
 # SigGPDE
 Library for Gaussian process on sequential data using signature kernels as covariance functions.
-SigGPDE is built upon GPSig which is based on GPflow and TensorFlow. The new features of SigGPDE are:
-- the possibility to compute the signature kernel using the [kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
+`SigGPDE` is built upon [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
+The new features in SigGPDE are:
+- the computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
+- the computation of the gradients of the signature kernels without resorting to automatic differentation
 - a sparse variational inference method based on variational orthogonal signature features (VOSF)
 ***
 ## Installing
@@ -34,17 +36,18 @@ cd gpsig
 python setup.py build_ext --inplace
 ```
 ***
-## Getting started
-To get started, we suggest to first look at the notebook `signature_kernel.ipynb`, which gives a simple worked out example of how to use the signature kernel as a standalone object. In this notebook, we validate the implementation of the signature kernel by comparing our results to an alternative way of computing signature features using the `esig` package.
-The difference between the two ways of computing the signature kernel is a 'kernel trick', which makes it possible to compute the signature kernel using only inner product evaluation on the underlying state-space.
-
-In the other notebook, `ts_classification.ipynb`, a worked out example is given on how to use signature kernels for time series classification using inter-domain sparse variational inference with inducing tensors to make computations tractable and efficient. To make the most of these examples, we also recommend to look into the [GPflow](https://github.com/GPflow/GPflow) syntax of defining kernels and GP models, a Gaussian process library that we build on.
+## Notebooks
+### PDE Signature kernel
+The notebook `pde_signature_kernel.ipynb` shows how to use the pde signature kernel. In this notebook, we validate the implementation of the PDE signature kernel and its gradients by comparing our results to the signature kernel trick used in `GPSig`. The notebook can also be used to verify that you have successfully built the signature kernel operators (Cython or Cuda). 
+### Classification of time series with SigGPDE
+The notebook `classification_example.ipynb` shows how to use `SigGPDE` for time series classification.
+### Forecasting rainfall with SigGPDE
+The notebook `rainfall_forecast.ipynb` shows how `SigGPDE` can be used to predict whether it will rain in the next hour using historical climatic data.
 ***
 
 ## Download datasets
-The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded from our dropbox folder using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
+The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
 ```
 cd benchmarks
 bash ./datasets/download_data.sh
 ```
-or manually by copy-pasting the dropbox url containd within the aforementioned script.
