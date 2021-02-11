@@ -1,8 +1,8 @@
 # SigGPDE
-Library for Gaussian process on sequential data using signature kernels as covariance functions, based on GPflow and TensorFlow.
-Extends the GPSig library by:
-- adding a new signature kernel, computed by solving a PDE
-- adding a new sparse variational inference method based on variational orthogonal signature features. 
+Library for Gaussian process on sequential data using signature kernels as covariance functions.
+SigGPDE is built upon GPSig which is based on GPflow and TensorFlow. The new features of SigGPDE are:
+- the possibility to compute the signature kernel using the [kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
+- a sparse variational inference method based on variational orthogonal signature features (VOSF)
 ***
 ## Installing
 Create and activate virtual environment with Python <= 3.7
@@ -14,13 +14,25 @@ Then, install the requirements using pip by
 ```
 pip install -r requirements.txt
 ```
-In order to use a GPU to run computations the following steps are required:
-- Install a GPU compatible version of TensorFlow instead with the command
+Note that in order to use a GPU to run computations you need to install a GPU compatible version of TensorFlow as follows
 ```
 conda install -c anaconda tensorflow-gpu=1.15.3
 pip install gpflow==1.5.1
 ```
-- 
+### Building the signature kernel operator (GPU)
+Build the custom TensorFlow operator as follows
+```
+cd gpsig/covariance_op
+sh Makefile_gpu.sh
+```
+You may have to modify the Makefile with your own cuda and tensorflow paths. 
+
+### Building the signature kernel operator (CPU)
+If you do not have a GPU, you need to build the Cython operator by executing
+```
+cd gpsig
+python setup.py build_ext --inplace
+```
 ***
 ## Getting started
 To get started, we suggest to first look at the notebook `signature_kernel.ipynb`, which gives a simple worked out example of how to use the signature kernel as a standalone object. In this notebook, we validate the implementation of the signature kernel by comparing our results to an alternative way of computing signature features using the `esig` package.
