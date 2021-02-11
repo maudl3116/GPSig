@@ -18,7 +18,7 @@ pip install -r requirements.txt
 ```
 Note that in order to use a GPU to run computations you need to install a GPU compatible version of TensorFlow as follows
 ```
-conda install -c anaconda tensorflow-gpu=1.15.3
+conda install -c conda-forge tensorflow-gpu=1.15
 pip install gpflow==1.5.1
 ```
 ### Building the signature kernel operator (GPU)
@@ -36,6 +36,10 @@ cd gpsig
 python setup.py build_ext --inplace
 ```
 ***
+## Source code
+The main functionalities (in the folder `gpsig`) for SigGPDE can be found in:
+- `kernels_pde.py` where the PDE signature kernel is implemented
+- `inducing_variables_vosf.py` where the variational orthogonal inducing signature features are implemented
 ## Notebooks
 ### PDE Signature kernel
 The notebook `pde_signature_kernel.ipynb` shows how to use the pde signature kernel. In this notebook, we validate the implementation of the PDE signature kernel and its gradients by comparing our results to the signature kernel trick used in GPSig. The notebook can also be used to verify that you have successfully built the signature kernel operators (Cython or Cuda). 
@@ -45,7 +49,7 @@ The notebook `classification_example.ipynb` shows how to use SigGPDE for time se
 The notebook `rainfall_forecast.ipynb` shows how SigGPDE can be used to predict whether it will rain in the next hour using historical climatic data.
 ***
 
-## Download datasets
+## Benchmarks and Datasets
 The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
 ```
 cd benchmarks
