@@ -18,10 +18,14 @@ def find(name, path):
     for root, dirs, files in os.walk(path):
         if name in files:
             return os.path.join(root, name)
-path = find("untrunc_cov_op_gpu.so",'..')
-cov_module_gpu = tf.load_op_library(path)
-sys.path.append('../gpsig')
-from covariance_op import _untrunc_cov_grad
+try:
+    path = find("untrunc_cov_op_gpu.so",'..')
+    cov_module_gpu = tf.load_op_library(path)
+    sys.path.append('../gpsig')
+    from covariance_op import _untrunc_cov_grad
+    print('Successfully loaded the Cuda PDE signature kernel operator')
+except:
+    pass
 
 
 
