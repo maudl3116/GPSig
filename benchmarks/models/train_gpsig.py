@@ -18,7 +18,7 @@ from utils import *
 from sklearn.metrics import accuracy_score, classification_report
 
 def train_gpsig_classifier(dataset, num_levels=4, num_inducing=500, normalize_data=True, minibatch_size=50, max_len=400, increments=True, learn_weights=False, signature_kernel='linear',
-                           num_lags=None, low_rank=False, val_split=None, test_split=None, experiment_idx=None, use_tensors=True, save_dir='./GPSig/', train_spec=None):
+                           num_lags=None, low_rank=False, val_split=None, test_split=None, experiment_idx=None, use_tensors=True, len_inducing=10, save_dir='./GPSig/', train_spec=None):
     
     print('####################################')
     print('Training dataset: {}'.format(dataset))
@@ -38,11 +38,11 @@ def train_gpsig_classifier(dataset, num_levels=4, num_inducing=500, normalize_da
         ## initialize inducing tensors and lengthsacles        
         if use_tensors:
             if dataset=='Crops':
-                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, labels=y_train, increments=increments, num_lags=num_lags)
+                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, increments=increments, num_lags=num_lags)
             else:
-                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, increments=increments, num_lags=num_lags)        
+                Z_init = suggest_initial_inducing_tensors(X_train, num_levels, num_inducing, labels=y_train, increments=increments, num_lags=num_lags)        
         else:
-            Z_init = suggest_initial_inducing_sequences(X_train, num_inducing, num_levels+1, labels=y_train)
+            Z_init = suggest_initial_inducing_sequences(X_train, num_inducing, len_inducing, labels=y_train)
             
         l_init = suggest_initial_lengthscales(X_train, num_samples=1000)
         
