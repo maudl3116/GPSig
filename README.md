@@ -4,7 +4,7 @@ SigGPDE is built upon the library [GPSig](https://arxiv.org/abs/1906.08215) whic
 The new features in SigGPDE are:
 - computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
 - computation of the gradients of the signature kernels without resorting to automatic differentation
-- sparse variational inference method based on variational orthogonal signature features (VOSF)
+- sparse variational inference method based on variational orthogonal signature features
 ***
 ## Installing
 Create and activate virtual environment with Python <= 3.7
