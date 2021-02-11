@@ -1,12 +1,13 @@
-# GPSig
-A Gaussian process library for Bayesian learning from sequential data, such as time series, using signature kernels as covariance functions based on GPflow and TensorFlow. This repository contains supplementary code to the paper https://arxiv.org/abs/1906.08215.
+# SigGPDE
+Library for Gaussian process on sequential data using signature kernels as covariance functions.
+SigGPDE is built upon [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
+The new features in SigGPDE are:
+- the computation of the signature kernels using the [PDE-based kernel trick](https://arxiv.org/pdf/2006.14794.pdf)
+- the computation of the gradients of the signature kernels without resorting to automatic differentation
+- a sparse variational inference method based on variational orthogonal signature features (VOSF)
 ***
 ## Installing
-To get started, you should first clone the repository using git, e.g. with the command
-```
-git clone https://github.com/tgcsaba/GPSig.git
-```
-and then create and activate virtual environment with Python <= 3.7
+Create and activate virtual environment with Python <= 3.7
 ```
 conda create -n env_name python=3.7
 conda activate env_name
@@ -15,25 +16,38 @@ Then, install the requirements using pip by
 ```
 pip install -r requirements.txt
 ```
-If you would like to use a GPU to run computations (which we heavily recommend, if you have one available), you most likely need to install a GPU compatible version of TensorFlow instead.
-Depending on your OS and CUDA compute capability of your GPU, you might be able to acquire a pre-built version of Tensorflow for your system (from pip, conda or other sources). In some cases, you might have to build it on your system yourself (https://www.tensorflow.org/install/source), which is generally recommended so that you end up with a version that is able to make full use of your hardware.
-***
-## Getting started
-To get started, we suggest to first look at the notebook `signature_kernel.ipynb`, which gives a simple worked out example of how to use the signature kernel as a standalone object. In this notebook, we validate the implementation of the signature kernel by comparing our results to an alternative way of computing signature features using the `esig` package.
-The difference between the two ways of computing the signature kernel is a 'kernel trick', which makes it possible to compute the signature kernel using only inner product evaluation on the underlying state-space.
+Note that in order to use a GPU to run computations you need to install a GPU compatible version of TensorFlow as follows
+```
+conda install -c anaconda tensorflow-gpu=1.15.3
+pip install gpflow==1.5.1
+```
+### Building the signature kernel operator (GPU)
+Build the custom TensorFlow operator as follows
+```
+cd gpsig/covariance_op
+sh Makefile_gpu.sh
+```
+You may have to modify the Makefile with your own cuda and tensorflow paths. 
 
-In the other notebook, `ts_classification.ipynb`, a worked out example is given on how to use signature kernels for time series classification using inter-domain sparse variational inference with inducing tensors to make computations tractable and efficient. To make the most of these examples, we also recommend to look into the [GPflow](https://github.com/GPflow/GPflow) syntax of defining kernels and GP models, a Gaussian process library that we build on.
+### Building the signature kernel operator (CPU)
+If you do not have a GPU, you need to build the Cython operator by executing
+```
+cd gpsig
+python setup.py build_ext --inplace
+```
+***
+## Notebooks
+### PDE Signature kernel
+The notebook `pde_signature_kernel.ipynb` shows how to use the pde signature kernel. In this notebook, we validate the implementation of the PDE signature kernel and its gradients by comparing our results to the signature kernel trick used in GPSig. The notebook can also be used to verify that you have successfully built the signature kernel operators (Cython or Cuda). 
+### Classification of time series with SigGPDE
+The notebook `classification_example.ipynb` shows how to use SigGPDE for time series classification.
+### Forecasting rainfall with SigGPDE
+The notebook `rainfall_forecast.ipynb` shows how SigGPDE can be used to predict whether it will rain in the next hour using historical climatic data.
 ***
 
 ## Download datasets
-The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded from our dropbox folder using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
+The benchmarks directory contains the appropriate scripts used to run the benchmarking experiments in the paper. The datasets can be downloaded using the `download_data.sh` script in the `./benchmarks/datasets` folder by running
 ```
 cd benchmarks
 bash ./datasets/download_data.sh
 ```
-or manually by copy-pasting the dropbox url containd within the aforementioned script.
-
-## Support
-We encourage the use of this code for applications, and we aim to provide support in as many cases as possible. For further assistance or to tell us about your project, please send an email to
-
-`csaba.toth@maths.ox.ac.uk` or `harald.oberhauser@maths.ox.ac.uk`.
