@@ -2,7 +2,7 @@
 A repository for Gaussian Processes on sequential data using signature kernels as covariance functions.
 SigGPDE is built upon the library [GPSig](https://arxiv.org/abs/1906.08215) which is itself based on GPflow and TensorFlow. 
 
-SigGPDE allows to define GPflow models with the [signature kernel] (https://arxiv.org/pdf/2006.14794.pdf) and provides a CUDA implementation of the kernel for GPU acceleration. Both forward and gradient passes are implemented for back-propagation to work. As for inference, SigGPDE introduces new interdomain inducing variables for variational approximations. The covariance matrix of these inducing variables is diagonal such that its inversion does not require a Cholesky decomposition. 
+SigGPDE allows to define GPflow models with the [signature kernel](https://arxiv.org/pdf/2006.14794.pdf) and provides a CUDA implementation of the kernel for GPU acceleration. Both forward and gradient passes are implemented for back-propagation to work. As for inference, SigGPDE introduces new interdomain inducing variables for variational approximations. The covariance matrix of these inducing variables is diagonal such that its inversion does not require a Cholesky decomposition. 
 
 ***
 ## Installing
