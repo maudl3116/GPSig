@@ -1,4 +1,4 @@
-from models import train_gpsig_classifier
+from models import train_sigGPDE_classifier
 
 import sys
 import os
@@ -11,7 +11,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = GPU_ID
 with open('./datasets.json', 'r') as f:
     datasets = json.load(f)
     
-results_dir = './results/GPSig_IS/'
+results_dir = './results/SigGPDE/'
 if not os.path.isdir(results_dir):
     os.makedirs(results_dir)
 
@@ -21,6 +21,7 @@ for i in range(num_experiments):
     for name in datasets.keys():
         
         dataset = datasets[name]
+
         results_filename = os.path.join(results_dir, '{}_{}.txt'.format(name, i))
 
         if os.path.exists(results_filename):
@@ -30,5 +31,5 @@ for i in range(num_experiments):
         with open(results_filename, 'w'):
             pass
 
-        train_gpsig_classifier(name, num_levels=4, num_inducing=dataset['M'], len_inducing=5, use_tensors=False, num_lags=0, increments=True, learn_weights=False,
-                               val_split=dataset['val_split'], normalize_data=True, train_spec=dataset['train_spec'],minibatch_size=dataset['minibatch_size'], experiment_idx=i, save_dir=results_dir)      
+        train_sigGPDE_classifier(name, M=dataset['M'], order = dataset['order'],num_lags=0, 
+                               val_split=dataset['val_split'], normalize_data=True, train_spec=dataset['train_spec'], minibatch_size=dataset['minibatch_size'], experiment_idx=i, save_dir=results_dir)      
